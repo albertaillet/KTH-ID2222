@@ -1,13 +1,20 @@
 # %% Imports
 import numpy as np
-from functools import reduce
 from itertools import combinations
-from nltk.corpus import reuters
 from collections import defaultdict
-from typing import Callable, Iterable
-from numpy import ndarray
+from nltk.corpus import reuters
 
-# %% Implemented classes
+# typing
+from numpy import ndarray
+from typing import Callable, Iterable, Any
+
+
+def reduce(f: Callable, l: Iterable) -> Any:
+    it = iter(l)
+    value = next(it)
+    for element in it:
+        value = f(value, element)
+    return value
 
 
 def map(f: Callable, l: Iterable) -> list:
@@ -18,22 +25,22 @@ class Shingling:
     def __init__(self, k: int) -> None:
         self.k = k
 
-    def shingle(self, text: str) -> set:
+    def shingle(self, text: str) -> set[int]:
         shingles = [hash(text[i : i + self.k]) for i in range(len(text) - self.k + 1)]
         return set(shingles)
 
     @staticmethod
-    def unique_shingles(uniques: set, shingles: set) -> set:
+    def unique_shingles(uniques: set[int], shingles: set[int]) -> set[int]:
         return uniques | shingles
 
 
 class CompareSets:
     @staticmethod
-    def distance(set1: set, set2: set) -> float:
+    def distance(set1: set[int], set2: set[int]) -> float:
         return len(set1 & set2) / len(set1 | set2)
 
     @staticmethod
-    def matrix(shingles: list) -> ndarray:
+    def matrix(shingles: list[set[int]]) -> ndarray:
         n_shingles = len(shingles)
         jaccard_matrix = np.zeros(shape=(n_shingles, n_shingles))
         for i in range(n_shingles):
@@ -43,8 +50,8 @@ class CompareSets:
 
 
 class MinHashing:
-    def __init__(self, permutations: int) -> None:
-        self.n_permutations = permutations
+    def __init__(self, n_permutations: int) -> None:
+        self.n_permutations = n_permutations
 
     def min_hash(self, char_mtrx: ndarray) -> ndarray:
         sign_mtrx = np.zeros(shape=(self.n_permutations, char_mtrx.shape[1]))
@@ -65,20 +72,25 @@ class LSH:
     def __init__(self, n_bands: int) -> None:
         self.n_bands = n_bands
 
-    def get_candidate_pairs(self, sign_mtrx: ndarray) -> Iterable:
+    def get_candidate_pairs(self, sign_mtrx: ndarray) -> set[tuple[int, int]]:
         buckets = defaultdict(set)
+        n_bands = self.n_bands
         n_rows, n_docs = sign_mtrx.shape
-        n_rows_per_band = n_rows // self.n_bands
-        for band_idx in range(self.n_bands):
-            band = sign_mtrx[band_idx : band_idx + n_rows_per_band, :]
+        n_rows_per_band = n_rows // n_bands
+        for band_idx in range(n_bands):
+            start = band_idx * n_rows_per_band
+            end = start + n_rows_per_band
+            band = sign_mtrx[start:end]
             for i in range(n_docs):
                 row = tuple(band[:, i])
                 buckets[row].add(i)
 
+        out = set()
         for bucket in buckets.values():
             if len(bucket) > 1:
                 for doc1, doc2 in combinations(bucket, 2):
-                    yield doc1, doc2
+                    out.add((doc1, doc2))
+        return out
 
 
 class CompareSignatures:
@@ -116,19 +128,16 @@ for d in range(len(hashed_shingles)):
     for int_shingle in hashed_shingles[d]:
         char_mtrx[int_shingle, d] = 1
 
-minnie = MinHashing(1000)
-sign_mtrx = minnie.min_hash(char_mtrx=char_mtrx)
+sign_mtrx = MinHashing(n_permutations=1000).min_hash(char_mtrx=char_mtrx)
 
 # %%
 j_mtrx = CompareSets.matrix(shingles)
 j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
 # %%
-lsh = LSH(500)
-candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
+candidate_pairs = LSH(n_bands=500).get_candidate_pairs(sign_mtrx)
 
 # %%
-i = 0
-for c in candidate_pairs:
-    i += 1
-print(i)
+print(len(candidate_pairs))
+print(sum(map(len, shingles)))
+
 # %%
