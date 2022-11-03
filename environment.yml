@@ -1,0 +1,6 @@
+name: id2222-env
+channels:
+  - conda-forge
+dependencies:
+  - python==3.11
+  - pyspark==3.3.1
