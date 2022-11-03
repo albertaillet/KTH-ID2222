@@ -2,7 +2,7 @@ name: id2222-env-2
 channels:
   - conda-forge
 dependencies:
-  - python
+  - python==3.10
   - pyspark
   - ipykernel
   - nltk
