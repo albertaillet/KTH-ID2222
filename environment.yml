@@ -6,3 +6,4 @@ dependencies:
   - pyspark
   - ipykernel
   - nltk
+  - matplotlib
