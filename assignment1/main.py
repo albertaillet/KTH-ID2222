@@ -4,7 +4,6 @@ from itertools import combinations
 from collections import defaultdict
 from nltk.corpus import reuters
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 # typing
 from numpy import ndarray
@@ -24,47 +23,61 @@ def map(f: Callable, l: Iterable) -> list:
 
 
 class Shingling:
+    '''Class that constructs k-shingles from a given document'''
+
     def __init__(self, k: int) -> None:
         self.k = k
 
     def shingle(self, text: str) -> set[int]:
+        '''Constructs k-shingles from a given document, computes a hash value for each unique shingle and
+        represents the document in the form of a set of its hashed k-shingles.'''
         shingles = [hash(text[i : i + self.k]) for i in range(len(text) - self.k + 1)]
         return set(shingles)
 
     @staticmethod
-    def unique_shingles(uniques: set[int], shingles: set[int]) -> set[int]:
+    def intersection(uniques: set[int], shingles: set[int]) -> set[int]:
+        '''Computes the intersection of two sets of hashed k-shingles.'''
         return uniques | shingles
 
 
 class CompareSets:
     @staticmethod
     def distance(set1: set[int], set2: set[int]) -> float:
+        '''Computes the Jaccard distance between two sets'''
         return len(set1 & set2) / len(set1 | set2)
 
     @staticmethod
     def matrix(shingles: list[set[int]]) -> ndarray:
-        n_shingles = len(shingles)
-        jaccard_matrix = np.zeros(shape=(n_shingles, n_shingles))
-        for i in range(n_shingles):
-            for j in range(n_shingles):
-                jaccard_matrix[i, j] = CompareSets.distance(shingles[i], shingles[j])
+        '''Creates the Jaccard distance matrix for a given list of sets'''
+        n = len(shingles)
+        jaccard_matrix = np.zeros(shape=(n, n))
+        for i, j in combinations(range(n), 2):
+            jaccard_matrix[i, j] = CompareSets.distance(shingles[i], shingles[j])
+            jaccard_matrix[j, i] = jaccard_matrix[i, j]
         return jaccard_matrix
-    
+
     @staticmethod
     def similar_docs_from_mtrx(jaccard_matrix: ndarray, threshold: int) -> set[tuple[int, int]]:
+        '''Returns a set of tuples of similar documents indices from a given Jaccard distance matrix'''
+        n, _ = jaccard_matrix.shape
         similar_pairs = set()
-        for doc1, doc2 in combinations(range(jaccard_matrix.shape[0]), 2):
+        for doc1, doc2 in combinations(range(n), 2):
             if jaccard_matrix[doc1, doc2] > threshold:
                 similar_pairs.add((doc1, doc2))
         return similar_pairs
 
+
 class MinHashing:
-    def __init__(self, n_permutations: int) -> None:
-        self.n_permutations = n_permutations
+    '''Class that builds a minHash signature of a given length n from a given set of integers'''
+
+    def __init__(self, n: int) -> None:
+        self.n_permutations = n
 
     def min_hash(self, char_mtrx: ndarray) -> ndarray:
-        sign_mtrx = np.zeros(shape=(self.n_permutations, char_mtrx.shape[1]))
-        for p in tqdm(range(self.n_permutations)):
+        '''Builds a minHash signature of a given length n from a given set of integers'''
+        n = self.n_permutations
+        sign_mtrx = np.zeros(shape=(n, char_mtrx.shape[1]))
+        for p in tqdm(range(n)):
             tmp_char_mtrx = np.random.permutation(char_mtrx)
             for c in range(tmp_char_mtrx.shape[1]):
                 for r in range(tmp_char_mtrx.shape[0]):
@@ -99,12 +112,12 @@ class LSH:
         return out
 
     @staticmethod
-    def test_candidates(candidate_pairs:set[tuple[int, int]], sign_mtrx: ndarray, threshold: float) -> set[tuple[int, int]]:
+    def test_candidates(candidate_pairs: set[tuple[int, int]], sign_mtrx: ndarray, threshold: float) -> set[tuple[int, int]]:
         similar_pairs = set()
         for i, j in candidate_pairs:
             sim = np.sum(sign_mtrx[:, i] == sign_mtrx[:, j]) / sign_mtrx.shape[0]
             if sim > threshold:
-                similar_pairs.add((i,j))
+                similar_pairs.add((i, j))
         return similar_pairs
 
     @staticmethod
@@ -113,6 +126,7 @@ class LSH:
         FN = J_sim_pairs - LSH_sim_pairs
         FP = LSH_sim_pairs - J_sim_pairs
         return TP, FN, FP
+
 
 class CompareSignatures:
     @staticmethod
@@ -124,15 +138,16 @@ class CompareSignatures:
                 j_mtrx[i, j] = np.sum(sign_mtrx[:, i] == sign_mtrx[:, j]) / n_permutations
         return j_mtrx
 
+
 # TODO: Find a better way to store the results of the various similarity methods and then plot them
-def similar_documents_test(n_docs:list[int], ks: list[int], ss:list[float], n_permutations:list[int], n_bands:list[int]):
+def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_permutations: list[int], n_bands: list[int]):
     for n in n_docs:
         docs = map(reuters.raw, reuters.fileids()[:n])
         for k in ks:
             shingling = Shingling(k)
             shingles = map(shingling.shingle, docs)
             j_mtrx = CompareSets.matrix(shingles)
-            uniques = reduce(shingling.unique_shingles, shingles)
+            uniques = reduce(shingling.intersection, shingles)
             mapping_dict = {s: i for i, s in enumerate(uniques)}
             hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
             char_mtrx = np.zeros(shape=(len(uniques), len(docs)), dtype=int)
@@ -142,13 +157,14 @@ def similar_documents_test(n_docs:list[int], ks: list[int], ss:list[float], n_pe
             for threshold in ss:
                 sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
                 for n_perms in n_permutations:
-                    sign_mtrx = MinHashing(n_permutations=n_perms).min_hash(char_mtrx=char_mtrx)
+                    sign_mtrx = MinHashing(n=n_perms).min_hash(char_mtrx=char_mtrx)
                     j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
                     sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
                     for b in n_bands:
                         lsh = LSH(n_bands=b)
-                        candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)                  
+                        candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
                         sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
+
 
 # %%
 similar_documents_test(
@@ -175,7 +191,7 @@ shingling = Shingling(k)
 shingles = map(shingling.shingle, docs)
 
 # %% Obtain all unique shingles and map each shingle to an int
-uniques = reduce(shingling.unique_shingles, shingles)
+uniques = reduce(shingling.intersection, shingles)
 mapping_dict = {s: i for i, s in enumerate(uniques)}
 hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
 
@@ -185,7 +201,7 @@ for doc in range(len(hashed_shingles)):
     for int_shingle in hashed_shingles[doc]:
         char_mtrx[int_shingle, doc] = 1
 
-sign_mtrx = MinHashing(n_permutations=n_permutations).min_hash(char_mtrx=char_mtrx)
+sign_mtrx = MinHashing(n=n_permutations).min_hash(char_mtrx=char_mtrx)
 
 # %% Obtain J matrx using all shingles and signatures
 j_mtrx = CompareSets.matrix(shingles)
