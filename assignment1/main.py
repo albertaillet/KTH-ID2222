@@ -38,6 +38,22 @@ class Shingling:
     def intersection(uniques: set[int], shingles: set[int]) -> set[int]:
         '''Computes the intersection of two sets of hashed k-shingles.'''
         return uniques | shingles
+    
+    @staticmethod
+    def characteristic_matrix(shingles: list[set[int]]) -> ndarray:
+        '''Computes the characteristic matrix of a given set of documents.'''
+
+        uniques = reduce(Shingling.intersection, shingles)
+        mapping_dict = {s: i for i, s in enumerate(uniques)}
+        hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
+
+        n_unique_shingles, n_documents = len(uniques), len(shingles)
+        char_mtrx = np.zeros(shape=(n_unique_shingles, n_documents), dtype=np.bool8)
+
+        for doc in range(len(hashed_shingles)):
+            for int_shingle in hashed_shingles[doc]:
+                char_mtrx[int_shingle, doc] = True
+        return char_mtrx
 
 
 class CompareSets:
@@ -47,7 +63,7 @@ class CompareSets:
         return len(set1 & set2) / len(set1 | set2)
 
     @staticmethod
-    def matrix(shingles: list[set[int]]) -> ndarray:
+    def distance_matrix(shingles: list[set[int]]) -> ndarray:
         '''Creates the Jaccard distance matrix for a given list of sets'''
         n = len(shingles)
         jaccard_matrix = np.zeros(shape=(n, n))
@@ -144,16 +160,9 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
     for n in n_docs:
         docs = map(reuters.raw, reuters.fileids()[:n])
         for k in ks:
-            shingling = Shingling(k)
-            shingles = map(shingling.shingle, docs)
-            j_mtrx = CompareSets.matrix(shingles)
-            uniques = reduce(shingling.intersection, shingles)
-            mapping_dict = {s: i for i, s in enumerate(uniques)}
-            hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
-            char_mtrx = np.zeros(shape=(len(uniques), len(docs)), dtype=int)
-            for doc in range(len(hashed_shingles)):
-                for int_shingle in hashed_shingles[doc]:
-                    char_mtrx[int_shingle, doc] = 1
+            shingles = map(Shingling(k).shingle, docs)
+            j_mtrx = CompareSets.distance_matrix(shingles)
+            char_mtrx = Shingling.characteristic_matrix(shingles)
             for threshold in ss:
                 sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
                 for n_perms in n_permutations:
@@ -173,7 +182,7 @@ similar_documents_test(
     ss=[0.2], 
     n_permutations=[500], 
     n_bands=[1000]
-    )
+)
 
 # TODO: implement a way to store how much time it takes
 
@@ -204,7 +213,7 @@ for doc in range(len(hashed_shingles)):
 sign_mtrx = MinHashing(n=n_permutations).min_hash(char_mtrx=char_mtrx)
 
 # %% Obtain J matrx using all shingles and signatures
-j_mtrx = CompareSets.matrix(shingles)
+j_mtrx = CompareSets.distance_matrix(shingles)
 sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
 
 j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
