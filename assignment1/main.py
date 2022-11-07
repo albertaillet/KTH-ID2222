@@ -2,7 +2,6 @@
 import numpy as np
 from itertools import combinations
 from collections import defaultdict
-from nltk.corpus import reuters
 from tqdm import tqdm
 
 # typing
@@ -66,14 +65,14 @@ class CompareSets:
     def distance_matrix(shingles: list[set[int]]) -> ndarray:
         '''Creates the Jaccard distance matrix for a given list of sets'''
         n = len(shingles)
-        jaccard_matrix = np.zeros(shape=(n, n))
+        jaccard_matrix = np.eye(n)
         for i, j in combinations(range(n), 2):
             jaccard_matrix[i, j] = CompareSets.distance(shingles[i], shingles[j])
             jaccard_matrix[j, i] = jaccard_matrix[i, j]
         return jaccard_matrix
 
     @staticmethod
-    def similar_docs_from_mtrx(jaccard_matrix: ndarray, threshold: int) -> set[tuple[int, int]]:
+    def similar_docs_from_mtrx(jaccard_matrix: ndarray, threshold: float) -> set[tuple[int, int]]:
         '''Returns a set of tuples of similar documents indices from a given Jaccard distance matrix'''
         n, _ = jaccard_matrix.shape
         similar_pairs = set()
@@ -176,56 +175,59 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
 
 
 # %%
-similar_documents_test(
-    n_docs=[50], 
-    ks=[2, 5, 10], 
-    ss=[0.2], 
-    n_permutations=[500], 
-    n_bands=[1000]
-)
+if __name__ == '__main__':
+    from nltk.corpus import reuters
+    
+    similar_documents_test(
+        n_docs=[50], 
+        ks=[2, 5, 10], 
+        ss=[0.2], 
+        n_permutations=[500], 
+        n_bands=[1000]
+    )
 
-# TODO: implement a way to store how much time it takes
+    # TODO: implement a way to store how much time it takes
 
-# %% Set parameters and load docs
-k = 5
-threshold = 0.2
-n_permutations = 3000
-b = 1000
+    # Set parameters and load docs
+    k = 5
+    threshold = 0.2
+    n_permutations = 3000
+    b = 1000
 
-n_docs = 50
-docs = map(reuters.raw, reuters.fileids()[:n_docs])
+    n_docs = 50
+    docs = map(reuters.raw, reuters.fileids()[:n_docs])
 
-# %% Get the shingles for each document
-shingling = Shingling(k)
-shingles = map(shingling.shingle, docs)
+    # Get the shingles for each document
+    shingling = Shingling(k)
+    shingles = map(shingling.shingle, docs)
 
-# %% Obtain all unique shingles and map each shingle to an int
-uniques = reduce(shingling.intersection, shingles)
-mapping_dict = {s: i for i, s in enumerate(uniques)}
-hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
+    # Obtain all unique shingles and map each shingle to an int
+    uniques = reduce(shingling.intersection, shingles)
+    mapping_dict = {s: i for i, s in enumerate(uniques)}
+    hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
 
-# %% Create characteristic mtrx (shingles x docs) and signature mtrx (signatures x docs)
-char_mtrx = np.zeros(shape=(len(uniques), len(docs)), dtype=int)
-for doc in range(len(hashed_shingles)):
-    for int_shingle in hashed_shingles[doc]:
-        char_mtrx[int_shingle, doc] = 1
+    # Create characteristic mtrx (shingles x docs) and signature mtrx (signatures x docs)
+    char_mtrx = np.zeros(shape=(len(uniques), len(docs)), dtype=int)
+    for doc in range(len(hashed_shingles)):
+        for int_shingle in hashed_shingles[doc]:
+            char_mtrx[int_shingle, doc] = 1
 
-sign_mtrx = MinHashing(n=n_permutations).min_hash(char_mtrx=char_mtrx)
+    sign_mtrx = MinHashing(n=n_permutations).min_hash(char_mtrx=char_mtrx)
 
-# %% Obtain J matrx using all shingles and signatures
-j_mtrx = CompareSets.distance_matrix(shingles)
-sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
+    # Obtain J matrx using all shingles and signatures
+    j_mtrx = CompareSets.distance_matrix(shingles)
+    sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
 
-j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
-sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
+    j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
+    sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
 
-# %% LSH to find candidate pairs and test them
-lsh = LSH(n_bands=b)
-candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
-sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
-TP, FN, FP = lsh.double_check(sim_pairs_LSH, sim_pairs)
-# %%
-print(len(candidate_pairs))
-print(sum(map(len, shingles)))
+    # LSH to find candidate pairs and test them
+    lsh = LSH(n_bands=b)
+    candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
+    sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
+    TP, FN, FP = lsh.double_check(sim_pairs_LSH, sim_pairs)
+    # %%
+    print(len(candidate_pairs))
+    print(sum(map(len, shingles)))
 
-# %%
+    # %%
