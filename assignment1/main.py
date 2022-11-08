@@ -3,6 +3,8 @@ import numpy as np
 from itertools import combinations
 from collections import defaultdict
 from tqdm import tqdm
+from time import time
+import matplotlib.pyplot as plt
 
 # typing
 from numpy import ndarray
@@ -57,17 +59,17 @@ class Shingling:
 
 class CompareSets:
     @staticmethod
-    def distance(set1: set[int], set2: set[int]) -> float:
-        '''Computes the Jaccard distance between two sets'''
+    def similarity(set1: set[int], set2: set[int]) -> float:
+        '''Computes the Jaccard similarity between two sets'''
         return len(set1 & set2) / len(set1 | set2)
 
     @staticmethod
-    def distance_matrix(shingles: list[set[int]]) -> ndarray:
-        '''Creates the Jaccard distance matrix for a given list of sets'''
+    def similarity_matrix(shingles: list[set[int]]) -> ndarray:
+        '''Creates the Jaccard similarity matrix for a given list of sets'''
         n = len(shingles)
         jaccard_matrix = np.eye(n)
         for i, j in combinations(range(n), 2):
-            jaccard_matrix[i, j] = CompareSets.distance(shingles[i], shingles[j])
+            jaccard_matrix[i, j] = CompareSets.similarity(shingles[i], shingles[j])
             jaccard_matrix[j, i] = jaccard_matrix[i, j]
         return jaccard_matrix
 
@@ -103,8 +105,9 @@ class MinHashing:
 
 
 class LSH:
-    def __init__(self, n_bands: int) -> None:
+    def __init__(self, n_bands: int, n_buckets: int) -> None:
         self.n_bands = n_bands
+        self.n_buckets = n_buckets
 
     def get_candidate_pairs(self, sign_mtrx: ndarray) -> set[tuple[int, int]]:
         buckets = defaultdict(set)
@@ -154,40 +157,77 @@ class CompareSignatures:
         return j_mtrx
 
 
-# TODO: Find a better way to store the results of the various similarity methods and then plot them
 def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_permutations: list[int], n_bands: list[int]):
+    sims_dict = {'J':{'sim_docs':[], 'time':[]}, 'LSH':{'sim_docs':[], 'time':[], 'TP':[]}, 'sign':{'sim_docs':[], 'time':[], 'TP':[]}}
     for n in n_docs:
         docs = map(reuters.raw, reuters.fileids()[:n])
         for k in ks:
             shingles = map(Shingling(k).shingle, docs)
-            j_mtrx = CompareSets.distance_matrix(shingles)
+            j_mtrx = CompareSets.similarity_matrix(shingles)
             char_mtrx = Shingling.characteristic_matrix(shingles)
             for threshold in ss:
+                j_start_time = time()
                 sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
+                j_time = time() - j_start_time
+
+                sims_dict['J']['sim_docs'].append(len(sim_pairs))
+                sims_dict['J']['time'].append(j_time)
                 for n_perms in n_permutations:
                     sign_mtrx = MinHashing(n=n_perms).min_hash(char_mtrx=char_mtrx)
                     j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
+                    sign_start_time = time()
                     sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
+                    sign_time = time() - sign_start_time
+                    sims_dict['sign']['sim_docs'].append(len(sim_pairs_approx))
+                    sims_dict['sign']['time'].append(sign_time)
+                    sims_dict['sign']['TP'].append(len(sim_pairs & sim_pairs_approx))
                     for b in n_bands:
-                        lsh = LSH(n_bands=b)
+                        lsh = LSH(n_bands=b, n_buckets=100)
                         candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
+                        lsh_start_time = time()
                         sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
+                        lsh_time = time() - lsh_start_time
+                        sims_dict['LSH']['sim_docs'].append(len(sim_pairs_LSH))
+                        sims_dict['LSH']['time'].append(lsh_time)
+                        sims_dict['LSH']['TP'].append(len(sim_pairs & sim_pairs_LSH))
 
+    plt.figure(figsize=(10, 10))
+    plt.suptitle(f'Similar Documents using k={k}, s={threshold}, n={n}, n_perms={n_perms}, n_bands={b}', fontsize=16)
+    plt.subplot(2, 2, 1)
+    plt.plot(n_docs, sims_dict['J']['sim_docs'], label='Jaccard')
+    plt.plot(n_docs, sims_dict['sign']['sim_docs'], label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['sim_docs'], label='LSH')
+    plt.xlabel('Number of documents')
+    plt.ylabel('Number of similar documents')
+    plt.legend()
+    plt.subplot(2, 2, 2)
+    plt.plot(n_docs, sims_dict['J']['time'], label='Jaccard')
+    plt.plot(n_docs, sims_dict['sign']['time'], label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['time'], label='LSH')
+    plt.xlabel('Number of documents')
+    plt.ylabel('Time (s)')
+    plt.legend()
+    plt.subplot(2, 2, 3)
+    plt.plot(n_docs, sims_dict['J']['sim_docs'], label='Jaccard')
+    plt.plot(n_docs, sims_dict['sign']['TP'], label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['TP'], label='LSH')
+    plt.xlabel('Number of documents')
+    plt.ylabel('True positives')
+    plt.legend()
+    plt.show()
 
 # %%
 if __name__ == '__main__':
     from nltk.corpus import reuters
     
     similar_documents_test(
-        n_docs=[50], 
-        ks=[2, 5, 10], 
+        n_docs=[50, 100, 200, 400], 
+        ks=[6], 
         ss=[0.2], 
-        n_permutations=[500], 
-        n_bands=[1000]
+        n_permutations=[1000], 
+        n_bands=[500]
     )
-
-    # TODO: implement a way to store how much time it takes
-
+# %%
     # Set parameters and load docs
     k = 5
     threshold = 0.2
@@ -215,7 +255,7 @@ if __name__ == '__main__':
     sign_mtrx = MinHashing(n=n_permutations).min_hash(char_mtrx=char_mtrx)
 
     # Obtain J matrx using all shingles and signatures
-    j_mtrx = CompareSets.distance_matrix(shingles)
+    j_mtrx = CompareSets.similarity_matrix(shingles)
     sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
 
     j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)

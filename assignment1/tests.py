@@ -40,12 +40,12 @@ def test_shingling(documents):
 
 def test_compare_sets():
     # Test Jaccard distance
-    assert CompareSets.distance({1, 2, 3}, {1, 2, 3}) == 1
+    assert CompareSets.similarity({1, 2, 3}, {1, 2, 3}) == 1
 
-    assert CompareSets.distance({1, 2, 3}, {1, 2, 4}) == 2 / 4
+    assert CompareSets.similarity({1, 2, 3}, {1, 2, 4}) == 2 / 4
 
     # Test Jaccard distance matrix
-    matrix = CompareSets.distance_matrix(
+    matrix = CompareSets.similarity_matrix(
         [
             {1, 2, 3},
             {1, 2, 3, 4},
