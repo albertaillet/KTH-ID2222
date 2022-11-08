@@ -138,12 +138,13 @@ class LSH:
                 similar_pairs.add((i, j))
         return similar_pairs
 
-    @staticmethod
-    def double_check(LSH_sim_pairs: set[tuple[int, int]], J_sim_pairs: set[tuple[int, int]]):
-        TP = LSH_sim_pairs & J_sim_pairs
-        FN = J_sim_pairs - LSH_sim_pairs
-        FP = LSH_sim_pairs - J_sim_pairs
-        return TP, FN, FP
+    
+def double_check(prediction: set[tuple[int, int]], ground_truth: set[tuple[int, int]], n: int) -> tuple[float, float, float]:
+    n_total_pairs = n * (n - 1) // 2
+    TPR = len(prediction & ground_truth) / len(ground_truth)
+    FNR = len(ground_truth - prediction) / len(ground_truth)
+    FPR = len(prediction - ground_truth) / (n_total_pairs - len(ground_truth))
+    return TPR, FNR, FPR
 
 
 class CompareSignatures:
@@ -158,7 +159,13 @@ class CompareSignatures:
 
 
 def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_permutations: list[int], n_bands: list[int]):
-    sims_dict = {'J':{'sim_docs':[], 'time':[]}, 'LSH':{'sim_docs':[], 'time':[], 'TP':[]}, 'sign':{'sim_docs':[], 'time':[], 'TP':[]}}
+    
+    sims_dict = {
+        'J':{'sim_docs':[], 'time':[]}, 
+        'LSH':{'sim_docs':[], 'time':[], 'TPR':[], 'FNR':[], 'FPR':[]}, 
+        'sign':{'sim_docs':[], 'time':[], 'TPR':[], 'FNR':[], 'FPR':[]}
+        }
+
     for n in n_docs:
         docs = map(reuters.raw, reuters.fileids()[:n])
         for k in ks:
@@ -177,42 +184,65 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
                     j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
                     sign_start_time = time()
                     sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
+                    TPR, FNR, FPR = double_check(sim_pairs_approx, sim_pairs, n)
                     sign_time = time() - sign_start_time
                     sims_dict['sign']['sim_docs'].append(len(sim_pairs_approx))
                     sims_dict['sign']['time'].append(sign_time)
-                    sims_dict['sign']['TP'].append(len(sim_pairs & sim_pairs_approx))
+                    sims_dict['sign']['TPR'].append(TPR)
+                    sims_dict['sign']['FNR'].append(FNR)
+                    sims_dict['sign']['FPR'].append(FPR)
                     for b in n_bands:
                         lsh = LSH(n_bands=b, n_buckets=100)
                         candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
                         lsh_start_time = time()
                         sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
+                        TPR, FNR, FPR = double_check(sim_pairs_LSH, sim_pairs, n)
                         lsh_time = time() - lsh_start_time
                         sims_dict['LSH']['sim_docs'].append(len(sim_pairs_LSH))
                         sims_dict['LSH']['time'].append(lsh_time)
-                        sims_dict['LSH']['TP'].append(len(sim_pairs & sim_pairs_LSH))
+                        sims_dict['LSH']['TPR'].append(TPR)
+                        sims_dict['LSH']['FNR'].append(FNR)
+                        sims_dict['LSH']['FPR'].append(FPR)
+                    
 
-    plt.figure(figsize=(10, 10))
+    plt.figure(figsize=(15, 15))
     plt.suptitle(f'Similar Documents using k={k}, s={threshold}, n={n}, n_perms={n_perms}, n_bands={b}', fontsize=16)
-    plt.subplot(2, 2, 1)
-    plt.plot(n_docs, sims_dict['J']['sim_docs'], label='Jaccard')
-    plt.plot(n_docs, sims_dict['sign']['sim_docs'], label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['sim_docs'], label='LSH')
+    plt.subplot(2, 3, 1)
+    plt.title('Number of similar documents for each method')
+    plt.plot(n_docs, sims_dict['J']['sim_docs'], '-x', label='Jaccard')
+    plt.plot(n_docs, sims_dict['sign']['sim_docs'],'-x', label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['sim_docs'],'-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('Number of similar documents')
     plt.legend()
-    plt.subplot(2, 2, 2)
-    plt.plot(n_docs, sims_dict['J']['time'], label='Jaccard')
-    plt.plot(n_docs, sims_dict['sign']['time'], label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['time'], label='LSH')
+    plt.subplot(2, 3, 2)
+    plt.title('Time to compute pairwise similarities')
+    plt.plot(n_docs, sims_dict['J']['time'], '-x', label='Jaccard')
+    plt.plot(n_docs, sims_dict['sign']['time'], '-x', label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['time'], '-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('Time (s)')
     plt.legend()
-    plt.subplot(2, 2, 3)
-    plt.plot(n_docs, sims_dict['J']['sim_docs'], label='Jaccard')
-    plt.plot(n_docs, sims_dict['sign']['TP'], label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['TP'], label='LSH')
+    plt.subplot(2, 3, 3)
+    plt.title('True positive ratios')
+    plt.plot(n_docs, sims_dict['sign']['TPR'],'-x',label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['TPR'], '-x',label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('True positives')
+    plt.legend()
+    plt.subplot(2, 3, 4)
+    plt.title('False negative ratios')
+    plt.plot(n_docs, sims_dict['sign']['FNR'], '-x',label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['FNR'], '-x',label='LSH')
+    plt.xlabel('Number of documents')
+    plt.ylabel('False negatives')
+    plt.legend()
+    plt.subplot(2, 3, 5)
+    plt.title('False positive ratios')
+    plt.plot(n_docs, sims_dict['sign']['FPR'], '-x',label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['FPR'], '-x',label='LSH')
+    plt.xlabel('Number of documents')
+    plt.ylabel('False positives')
     plt.legend()
     plt.show()
 
@@ -225,7 +255,7 @@ if __name__ == '__main__':
         ks=[6], 
         ss=[0.2], 
         n_permutations=[1000], 
-        n_bands=[500]
+        n_bands=[250]
     )
 # %%
     # Set parameters and load docs
@@ -265,7 +295,7 @@ if __name__ == '__main__':
     lsh = LSH(n_bands=b)
     candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
     sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
-    TP, FN, FP = lsh.double_check(sim_pairs_LSH, sim_pairs)
+    TP, FN, FP = double_check(sim_pairs_LSH, sim_pairs)
     # %%
     print(len(candidate_pairs))
     print(sum(map(len, shingles)))
