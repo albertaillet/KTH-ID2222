@@ -2,7 +2,7 @@
 import pytest
 import numpy as np
 from functools import partial
-from main import Shingling, CompareSets, MinHashing, LSH, CompareSignatures, reduce, map
+from main import Shingling, CompareSets, MinHashing, CompareSignatures, LSH, reduce, map
 
 
 @pytest.fixture
@@ -61,17 +61,83 @@ def test_compare_sets():
         ]
     )
 
-    assert np.allclose(matrix, expected_matrix), f'Error in distance matrix \n{matrix}\n{expected_matrix}'
+    assert np.allclose(matrix, expected_matrix), f'Error in similarity matrix \n{matrix}\n{expected_matrix}'
 
     # Test getting similar document pairs
-    pairs = CompareSets.similar_docs_from_mtrx(expected_matrix, threshold=0.5)
+    pairs = CompareSets.threshold_similarity_matrix_pairs(expected_matrix, threshold=0.5)
 
     assert pairs == {(0, 1), (0, 2), (1, 2)}
 
-    pairs = CompareSets.similar_docs_from_mtrx(expected_matrix, threshold=0.6)
+    pairs = CompareSets.threshold_similarity_matrix_pairs(expected_matrix, threshold=0.6)
 
     assert pairs == {(0, 1), (1, 2)}
 
-    pairs = CompareSets.similar_docs_from_mtrx(expected_matrix, threshold=0.75)
+    pairs = CompareSets.threshold_similarity_matrix_pairs(expected_matrix, threshold=0.75)
 
     assert pairs == {(1, 2)}
+
+
+def test_compare_signatures():
+
+    v1 = np.array([1, 2, 3, 4, 5])
+    v2 = np.array([1, 2, 3, 4, 5])
+
+    assert CompareSignatures.similarity(v1, v2) == 1
+
+    v1 = np.array([1, 2, 3, 4, 5])
+    v2 = np.array([1, 2, 3, 4, 6])
+
+    assert CompareSignatures.similarity(v1, v2) == 4 / 5
+
+    v1 = np.array([1, 2, 3, 4, 5])
+    v2 = np.array([0, 0, 0, 0, 0])
+
+    assert CompareSignatures.similarity(v1, v2) == 0
+
+    signature_matrix = np.array(
+        [
+            [0, 2, 3, 2],
+            [0, 1, 3, 1],
+            [0, 1, 3, 1],
+            [1, 2, 1, 2],
+            [2, 5, 2, 0],
+            [2, 5, 2, 0],
+        ]
+    )
+
+    matrix = CompareSignatures.approx_matrix(signature_matrix)
+
+    expected_matrix = np.array(
+        [
+            [1, 0, 3 / 6, 0],
+            [0, 1, 0, 4 / 6],
+            [3 / 6, 0, 1, 0],
+            [0, 4 / 6, 0, 1],
+        ]
+    )
+
+    assert np.allclose(matrix, expected_matrix), f'Error in signature matrix \n{matrix}\n{expected_matrix}'
+
+
+def test_lsh():
+
+    # signature matrix with 4 documents and 3 permutations
+    signature_matrix = np.array(
+        [
+            [0, 2, 3, 2],
+            [0, 1, 3, 1],
+            [0, 1, 3, 1],
+            [1, 2, 1, 2],
+            [2, 5, 2, 0],
+            [2, 5, 2, 0],
+        ]
+    )
+
+    assert LSH.get_candidate_pairs(signature_matrix, n_bands=1) == set()
+    assert LSH.get_candidate_pairs(signature_matrix, n_bands=2) == {(0, 2), (1, 3)}
+    assert LSH.get_candidate_pairs(signature_matrix, n_bands=3) == {(0, 2), (1, 3), (0, 3)}
+
+    candidate_pairs = {(0, 2), (1, 3)}
+
+    assert LSH.test_candidates(candidate_pairs, signature_matrix, threshold=0.49) == candidate_pairs
+    assert LSH.test_candidates(candidate_pairs, signature_matrix, threshold=0.5) == {(1, 3)}

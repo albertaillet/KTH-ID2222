@@ -4,13 +4,13 @@ from itertools import combinations
 from collections import defaultdict
 from functools import partial
 from tqdm import tqdm
-from numba import njit
 from time import time
 import matplotlib.pyplot as plt
 
 # typing
 from numpy import ndarray
 from typing import Callable, Iterable, Any
+
 
 def reduce(f: Callable, l: Iterable) -> Any:
     it = iter(l)
@@ -22,6 +22,7 @@ def reduce(f: Callable, l: Iterable) -> Any:
 
 def map(f: Callable, l: Iterable) -> list:
     return [f(x) for x in l]
+
 
 class Shingling:
     @staticmethod
@@ -45,12 +46,12 @@ class Shingling:
         hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
 
         n_unique_shingles, n_documents = len(uniques), len(shingles)
-        char_mtrx = np.zeros(shape=(n_unique_shingles, n_documents), dtype=np.bool8)
+        characteristic_matrix = np.zeros((n_unique_shingles, n_documents), dtype=np.bool8)
 
         for doc in range(len(hashed_shingles)):
             for int_shingle in hashed_shingles[doc]:
-                char_mtrx[int_shingle, doc] = True
-        return char_mtrx
+                characteristic_matrix[int_shingle, doc] = True
+        return characteristic_matrix
 
 
 class CompareSets:
@@ -70,8 +71,8 @@ class CompareSets:
         return jaccard_matrix
 
     @staticmethod
-    def similar_docs_from_mtrx(jaccard_matrix: ndarray, threshold: float) -> set[tuple[int, int]]:
-        '''Returns a set of tuples of similar documents indices from a given Jaccard distance matrix'''
+    def threshold_similarity_matrix_pairs(jaccard_matrix: ndarray, threshold: float) -> set[tuple[int, int]]:
+        '''Returns a set of tuples of similar documents indices from a given Jaccard similarity matrix'''
         n, _ = jaccard_matrix.shape
         similar_pairs = set()
         for doc1, doc2 in combinations(range(n), 2):
@@ -82,14 +83,13 @@ class CompareSets:
 
 class MinHashing:
     @staticmethod
-    @njit
     def hash(characteristic_matrix: ndarray, n: int, seed: int = 1) -> ndarray:
-        '''Builds a minHash signature of a given length n from a given set of integers'''
+        '''Builds a minHash signature matrix of a given length n from a given set of integers'''
         random_state = np.random.RandomState(seed)
         n_permutations = n
         n_unique_shingles, n_documents = characteristic_matrix.shape
 
-        signature_mtrx = np.zeros((n_permutations, n_documents), dtype=np.int32)
+        signature_matrix = np.zeros((n_permutations, n_documents), dtype=np.int32)
 
         for permutation_index in tqdm(range(n_permutations)):
             permuted_characteristic_matrix = random_state.permutation(characteristic_matrix)
@@ -97,9 +97,26 @@ class MinHashing:
                 row_index = 0
                 while not permuted_characteristic_matrix[row_index, col_index]:
                     row_index += 1
-                signature_mtrx[permutation_index, col_index] = row_index
+                signature_matrix[permutation_index, col_index] = row_index
 
-        return signature_mtrx
+        return signature_matrix
+
+
+class CompareSignatures:
+    @staticmethod
+    def similarity(v1: ndarray, v2: ndarray) -> float:
+        '''Computes the similarity between two minHash signatures'''
+        return np.mean(v1 == v2)
+
+    @staticmethod
+    def approx_matrix(signature_mtrx: ndarray) -> ndarray:
+        '''Computes the approximate Jaccard similarity matrix from a given signature matrix'''
+        _, n_docs = signature_mtrx.shape
+        approximate_similarity_matrix = np.eye(n_docs)
+        for i, j in combinations(range(n_docs), 2):
+            approximate_similarity_matrix[i, j] = CompareSignatures.similarity(signature_mtrx[:, i], signature_mtrx[:, j])
+            approximate_similarity_matrix[j, i] = approximate_similarity_matrix[i, j]
+        return approximate_similarity_matrix
 
 
 class LSH:
@@ -126,16 +143,18 @@ class LSH:
         return out
 
     @staticmethod
-    def test_candidates(candidate_pairs: set[tuple[int, int]], sign_mtrx: ndarray, threshold: float) -> set[tuple[int, int]]:
+    def test_candidates(candidate_pairs: set[tuple[int, int]], signature_mtrx: ndarray, threshold: float) -> set[tuple[int, int]]:
+        '''Returns a set of similar pairs of documents from a given set of candidate pairs, thresholed by a given value'''
+        n_rows, n_docs = signature_mtrx.shape
         similar_pairs = set()
         for i, j in candidate_pairs:
-            sim = np.sum(sign_mtrx[:, i] == sign_mtrx[:, j]) / sign_mtrx.shape[0]
+            sim = np.sum(signature_mtrx[:, i] == signature_mtrx[:, j]) / n_rows
             if sim > threshold:
                 similar_pairs.add((i, j))
         return similar_pairs
 
-    
-def double_check(prediction: set[tuple[int, int]], ground_truth: set[tuple[int, int]], n: int) -> tuple[float, float, float]:
+
+def metrics(prediction: set[tuple[int, int]], ground_truth: set[tuple[int, int]], n: int) -> tuple[float, float, float]:
     n_total_pairs = n * (n - 1) // 2
     TPR = len(prediction & ground_truth) / len(ground_truth)
     FNR = len(ground_truth - prediction) / len(ground_truth)
@@ -143,70 +162,62 @@ def double_check(prediction: set[tuple[int, int]], ground_truth: set[tuple[int, 
     return TPR, FNR, FPR
 
 
-class CompareSignatures:
-    @staticmethod
-    def approx_matrix(sign_mtrx: ndarray) -> ndarray:
-        n_permutations, n_docs = sign_mtrx.shape
-        j_mtrx = np.zeros(shape=(n_docs, n_docs))
-        for i in range(n_docs):
-            for j in range(n_docs):
-                j_mtrx[i, j] = np.sum(sign_mtrx[:, i] == sign_mtrx[:, j]) / n_permutations
-        return j_mtrx
+def similar_documents_test(n_docs: list[int], k: int, threshold: float, n_permutations: int, n_bands: int):
 
-
-def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_permutations: list[int], n_bands: list[int]):
-    
     sims_dict = {
-        'J':{'sim_docs':[], 'time':[]}, 
-        'LSH':{'sim_docs':[], 'time':[], 'TPR':[], 'FNR':[], 'FPR':[]}, 
-        'sign':{'sim_docs':[], 'time':[], 'TPR':[], 'FNR':[], 'FPR':[]}
-        }
+        'J': {'sim_docs': [], 'time': []},
+        'LSH': {'sim_docs': [], 'time': [], 'TPR': [], 'FNR': [], 'FPR': []},
+        'sign': {'sim_docs': [], 'time': [], 'TPR': [], 'FNR': [], 'FPR': []},
+    }
 
     for n in n_docs:
         docs = map(reuters.raw, reuters.fileids()[:n])
-        for k in ks:
-            shingles = map(partial(Shingling.shingle, k=k), docs)
-            j_mtrx = CompareSets.similarity_matrix(shingles)
-            char_mtrx = Shingling.characteristic_matrix(shingles)
-            for threshold in ss:
-                j_start_time = time()
-                sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
-                j_time = time() - j_start_time
+        shingles = map(partial(Shingling.shingle, k=k), docs)
+        j_mtrx = CompareSets.similarity_matrix(shingles)
+        char_mtrx = Shingling.characteristic_matrix(shingles)
 
-                sims_dict['J']['sim_docs'].append(len(sim_pairs))
-                sims_dict['J']['time'].append(j_time)
-                for n_perms in n_permutations:
-                    sign_mtrx = MinHashing.hash(char_mtrx, n_perms)
-                    j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
-                    sign_start_time = time()
-                    sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
-                    TPR, FNR, FPR = double_check(sim_pairs_approx, sim_pairs, n)
-                    sign_time = time() - sign_start_time
-                    sims_dict['sign']['sim_docs'].append(len(sim_pairs_approx))
-                    sims_dict['sign']['time'].append(sign_time)
-                    sims_dict['sign']['TPR'].append(TPR)
-                    sims_dict['sign']['FNR'].append(FNR)
-                    sims_dict['sign']['FPR'].append(FPR)
-                    for b in n_bands:
-                        candidate_pairs = LSH.get_candidate_pairs(sign_mtrx, n_bands=b)                        
-                        lsh_start_time = time()
-                        sim_pairs_LSH = LSH.test_candidates(candidate_pairs, sign_mtrx, threshold)
-                        TPR, FNR, FPR = double_check(sim_pairs_LSH, sim_pairs, n)
-                        lsh_time = time() - lsh_start_time
-                        sims_dict['LSH']['sim_docs'].append(len(sim_pairs_LSH))
-                        sims_dict['LSH']['time'].append(lsh_time)
-                        sims_dict['LSH']['TPR'].append(TPR)
-                        sims_dict['LSH']['FNR'].append(FNR)
-                        sims_dict['LSH']['FPR'].append(FPR)
-                    
+        j_start_time = time()
+        sim_pairs = CompareSets.threshold_similarity_matrix_pairs(j_mtrx, threshold=threshold)
+        j_time = time() - j_start_time
+
+        sims_dict['J']['sim_docs'].append(len(sim_pairs))
+        sims_dict['J']['time'].append(j_time)
+
+        sign_mtrx = MinHashing.hash(char_mtrx, n_permutations)
+        j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
+
+        sign_start_time = time()
+        sim_pairs_approx = CompareSets.threshold_similarity_matrix_pairs(j_approx_mtrx, threshold=threshold)
+        sign_time = time() - sign_start_time
+
+        TPR, FNR, FPR = metrics(sim_pairs_approx, sim_pairs, n)
+
+        sims_dict['sign']['sim_docs'].append(len(sim_pairs_approx))
+        sims_dict['sign']['time'].append(sign_time)
+        sims_dict['sign']['TPR'].append(TPR)
+        sims_dict['sign']['FNR'].append(FNR)
+        sims_dict['sign']['FPR'].append(FPR)
+        candidate_pairs = LSH.get_candidate_pairs(sign_mtrx, n_bands)
+
+        lsh_start_time = time()
+        sim_pairs_LSH = LSH.test_candidates(candidate_pairs, sign_mtrx, threshold)
+        lsh_time = time() - lsh_start_time
+
+        TPR, FNR, FPR = metrics(sim_pairs_LSH, sim_pairs, n)
+
+        sims_dict['LSH']['sim_docs'].append(len(sim_pairs_LSH))
+        sims_dict['LSH']['time'].append(lsh_time)
+        sims_dict['LSH']['TPR'].append(TPR)
+        sims_dict['LSH']['FNR'].append(FNR)
+        sims_dict['LSH']['FPR'].append(FPR)
 
     plt.figure(figsize=(15, 15))
-    plt.suptitle(f'Similar Documents') 
+    plt.suptitle(f'Similar Documents')
     plt.subplot(2, 3, 1)
     plt.title('Number of similar documents for each method')
     plt.plot(n_docs, sims_dict['J']['sim_docs'], '-x', label='Jaccard')
-    plt.plot(n_docs, sims_dict['sign']['sim_docs'],'-x', label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['sim_docs'],'-x', label='LSH')
+    plt.plot(n_docs, sims_dict['sign']['sim_docs'], '-x', label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['sim_docs'], '-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('Number of similar documents')
     plt.legend()
@@ -220,22 +231,22 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
     plt.legend()
     plt.subplot(2, 3, 3)
     plt.title('True positive ratios')
-    plt.plot(n_docs, sims_dict['sign']['TPR'],'-x',label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['TPR'], '-x',label='LSH')
+    plt.plot(n_docs, sims_dict['sign']['TPR'], '-x', label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['TPR'], '-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('True positives')
     plt.legend()
     plt.subplot(2, 3, 4)
     plt.title('False negative ratios')
-    plt.plot(n_docs, sims_dict['sign']['FNR'], '-x',label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['FNR'], '-x',label='LSH')
+    plt.plot(n_docs, sims_dict['sign']['FNR'], '-x', label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['FNR'], '-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('False negatives')
     plt.legend()
     plt.subplot(2, 3, 5)
     plt.title('False positive ratios')
-    plt.plot(n_docs, sims_dict['sign']['FPR'], '-x',label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['FPR'], '-x',label='LSH')
+    plt.plot(n_docs, sims_dict['sign']['FPR'], '-x', label='Signatures')
+    plt.plot(n_docs, sims_dict['LSH']['FPR'], '-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('False positives')
     plt.legend()
@@ -246,4 +257,4 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
 if __name__ == '__main__':
     from nltk.corpus import reuters
 
-    similar_documents_test(n_docs=[50, 100, 200, 400], ks=[6], ss=[0.2], n_permutations=[1000], n_bands=[500])
+    similar_documents_test(n_docs=[50, 100, 200, 400], k=6, threshold=0.2, n_permutations=1000, n_bands=500)
