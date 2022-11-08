@@ -1,6 +1,7 @@
 # run tests using: pytest ./*/tests.py
 import pytest
 import numpy as np
+from functools import partial
 from main import Shingling, CompareSets, MinHashing, LSH, CompareSignatures, reduce, map
 
 
@@ -10,8 +11,7 @@ def documents():
 
 
 def test_shingling(documents):
-    k = 5
-    shingles = map(Shingling(k).shingle, documents)
+    shingles = map(partial(Shingling.shingle, k=5), documents)
     uniques = reduce(Shingling.intersection, shingles)
     assert len(shingles) == 4
 

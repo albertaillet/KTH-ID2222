@@ -2,7 +2,9 @@
 import numpy as np
 from itertools import combinations
 from collections import defaultdict
+from functools import partial
 from tqdm import tqdm
+from numba import njit
 from time import time
 import matplotlib.pyplot as plt
 
@@ -24,22 +26,18 @@ def map(f: Callable, l: Iterable) -> list:
 
 
 class Shingling:
-    '''Class that constructs k-shingles from a given document'''
-
-    def __init__(self, k: int) -> None:
-        self.k = k
-
-    def shingle(self, text: str) -> set[int]:
+    @staticmethod
+    def shingle(text: str, k: int) -> set[int]:
         '''Constructs k-shingles from a given document, computes a hash value for each unique shingle and
         represents the document in the form of a set of its hashed k-shingles.'''
-        shingles = [hash(text[i : i + self.k]) for i in range(len(text) - self.k + 1)]
+        shingles = [hash(text[i : i + k]) for i in range(len(text) - k + 1)]
         return set(shingles)
 
     @staticmethod
     def intersection(uniques: set[int], shingles: set[int]) -> set[int]:
         '''Computes the intersection of two sets of hashed k-shingles.'''
         return uniques | shingles
-    
+
     @staticmethod
     def characteristic_matrix(shingles: list[set[int]]) -> ndarray:
         '''Computes the characteristic matrix of a given set of documents.'''
@@ -85,39 +83,39 @@ class CompareSets:
 
 
 class MinHashing:
-    '''Class that builds a minHash signature of a given length n from a given set of integers'''
-
-    def __init__(self, n: int) -> None:
-        self.n_permutations = n
-
-    def min_hash(self, char_mtrx: ndarray) -> ndarray:
+    @staticmethod
+    @njit
+    def hash(characteristic_matrix: ndarray, n: int, seed: int = 1) -> ndarray:
         '''Builds a minHash signature of a given length n from a given set of integers'''
-        n = self.n_permutations
-        sign_mtrx = np.zeros(shape=(n, char_mtrx.shape[1]))
-        for p in tqdm(range(n)):
-            tmp_char_mtrx = np.random.permutation(char_mtrx)
-            for c in range(tmp_char_mtrx.shape[1]):
-                for r in range(tmp_char_mtrx.shape[0]):
-                    if tmp_char_mtrx[r, c]:
-                        sign_mtrx[p, c] = r
-                        break
-        return sign_mtrx
+        random_state = np.random.RandomState(seed)
+        n_permutations = n
+        n_unique_shingles, n_documents = characteristic_matrix.shape
+
+        signature_mtrx = np.zeros((n_permutations, n_documents), dtype=np.int32)
+
+        for permutation_index in tqdm(range(n_permutations)):
+            permuted_characteristic_matrix = random_state.permutation(characteristic_matrix)
+            for col_index in range(n_documents):
+                row_index = 0
+                while not permuted_characteristic_matrix[row_index, col_index]:
+                    row_index += 1
+                signature_mtrx[permutation_index, col_index] = row_index
+
+        return signature_mtrx
 
 
 class LSH:
-    def __init__(self, n_bands: int, n_buckets: int) -> None:
-        self.n_bands = n_bands
-        self.n_buckets = n_buckets
-
-    def get_candidate_pairs(self, sign_mtrx: ndarray) -> set[tuple[int, int]]:
+    @staticmethod
+    def get_candidate_pairs(signature_mtrx: ndarray, n_bands: int) -> set[tuple[int, int]]:
+        '''Returns a set of candidate pairs of documents from a given signature matrix'''
         buckets = defaultdict(set)
-        n_bands = self.n_bands
-        n_rows, n_docs = sign_mtrx.shape
+        n_rows, n_docs = signature_mtrx.shape
         n_rows_per_band = n_rows // n_bands
+
         for band_idx in range(n_bands):
             start = band_idx * n_rows_per_band
             end = start + n_rows_per_band
-            band = sign_mtrx[start:end]
+            band = signature_mtrx[start:end]
             for i in range(n_docs):
                 row = tuple(band[:, i])
                 buckets[row].add(i)
@@ -158,11 +156,11 @@ class CompareSignatures:
 
 
 def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_permutations: list[int], n_bands: list[int]):
-    sims_dict = {'J':{'sim_docs':[], 'time':[]}, 'LSH':{'sim_docs':[], 'time':[], 'TP':[]}, 'sign':{'sim_docs':[], 'time':[], 'TP':[]}}
+    sims_dict = {'J': {'sim_docs': [], 'time': []}, 'LSH': {'sim_docs': [], 'time': [], 'TP': []}, 'sign': {'sim_docs': [], 'time': [], 'TP': []}}
     for n in n_docs:
         docs = map(reuters.raw, reuters.fileids()[:n])
         for k in ks:
-            shingles = map(Shingling(k).shingle, docs)
+            shingles = map(partial(Shingling.shingle, k=k), docs)
             j_mtrx = CompareSets.similarity_matrix(shingles)
             char_mtrx = Shingling.characteristic_matrix(shingles)
             for threshold in ss:
@@ -173,7 +171,7 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
                 sims_dict['J']['sim_docs'].append(len(sim_pairs))
                 sims_dict['J']['time'].append(j_time)
                 for n_perms in n_permutations:
-                    sign_mtrx = MinHashing(n=n_perms).min_hash(char_mtrx=char_mtrx)
+                    sign_mtrx = MinHashing.hash(char_mtrx, n_perms)
                     j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
                     sign_start_time = time()
                     sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
@@ -182,17 +180,16 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
                     sims_dict['sign']['time'].append(sign_time)
                     sims_dict['sign']['TP'].append(len(sim_pairs & sim_pairs_approx))
                     for b in n_bands:
-                        lsh = LSH(n_bands=b, n_buckets=100)
-                        candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
+                        candidate_pairs = LSH.get_candidate_pairs(sign_mtrx, n_bands=b)
                         lsh_start_time = time()
-                        sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
+                        sim_pairs_LSH = LSH.test_candidates(candidate_pairs, sign_mtrx, threshold)
                         lsh_time = time() - lsh_start_time
                         sims_dict['LSH']['sim_docs'].append(len(sim_pairs_LSH))
                         sims_dict['LSH']['time'].append(lsh_time)
                         sims_dict['LSH']['TP'].append(len(sim_pairs & sim_pairs_LSH))
 
     plt.figure(figsize=(10, 10))
-    plt.suptitle(f'Similar Documents using k={k}, s={threshold}, n={n}, n_perms={n_perms}, n_bands={b}', fontsize=16)
+    plt.suptitle(f'Similar Documents')  # k={k}, s={threshold}, n={n}, n_perms={n_perms}, n_bands={b}', fontsize=16)
     plt.subplot(2, 2, 1)
     plt.plot(n_docs, sims_dict['J']['sim_docs'], label='Jaccard')
     plt.plot(n_docs, sims_dict['sign']['sim_docs'], label='Signatures')
@@ -216,58 +213,9 @@ def similar_documents_test(n_docs: list[int], ks: list[int], ss: list[float], n_
     plt.legend()
     plt.show()
 
+
 # %%
 if __name__ == '__main__':
     from nltk.corpus import reuters
-    
-    similar_documents_test(
-        n_docs=[50, 100, 200, 400], 
-        ks=[6], 
-        ss=[0.2], 
-        n_permutations=[1000], 
-        n_bands=[500]
-    )
-# %%
-    # Set parameters and load docs
-    k = 5
-    threshold = 0.2
-    n_permutations = 3000
-    b = 1000
 
-    n_docs = 50
-    docs = map(reuters.raw, reuters.fileids()[:n_docs])
-
-    # Get the shingles for each document
-    shingling = Shingling(k)
-    shingles = map(shingling.shingle, docs)
-
-    # Obtain all unique shingles and map each shingle to an int
-    uniques = reduce(shingling.intersection, shingles)
-    mapping_dict = {s: i for i, s in enumerate(uniques)}
-    hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
-
-    # Create characteristic mtrx (shingles x docs) and signature mtrx (signatures x docs)
-    char_mtrx = np.zeros(shape=(len(uniques), len(docs)), dtype=int)
-    for doc in range(len(hashed_shingles)):
-        for int_shingle in hashed_shingles[doc]:
-            char_mtrx[int_shingle, doc] = 1
-
-    sign_mtrx = MinHashing(n=n_permutations).min_hash(char_mtrx=char_mtrx)
-
-    # Obtain J matrx using all shingles and signatures
-    j_mtrx = CompareSets.similarity_matrix(shingles)
-    sim_pairs = CompareSets.similar_docs_from_mtrx(j_mtrx, threshold=threshold)
-
-    j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
-    sim_pairs_approx = CompareSets.similar_docs_from_mtrx(j_approx_mtrx, threshold=threshold)
-
-    # LSH to find candidate pairs and test them
-    lsh = LSH(n_bands=b)
-    candidate_pairs = lsh.get_candidate_pairs(sign_mtrx)
-    sim_pairs_LSH = lsh.test_candidates(candidate_pairs, sign_mtrx, threshold)
-    TP, FN, FP = lsh.double_check(sim_pairs_LSH, sim_pairs)
-    # %%
-    print(len(candidate_pairs))
-    print(sum(map(len, shingles)))
-
-    # %%
+    similar_documents_test(n_docs=[50, 100, 200, 400], ks=[6], ss=[0.2], n_permutations=[1000], n_bands=[500])
