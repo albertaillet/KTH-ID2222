@@ -6,6 +6,7 @@ from functools import partial
 from tqdm import tqdm
 from time import time
 import matplotlib.pyplot as plt
+import json
 
 # typing
 from numpy import ndarray
@@ -104,7 +105,7 @@ class MinHashing:
 
 class CompareSignatures:
     @staticmethod
-    def similarity(v1: ndarray, v2: ndarray) -> float:
+    def similarity(v1: ndarray, v2: ndarray) -> Any:
         '''Computes the similarity between two minHash signatures'''
         return np.mean(v1 == v2)
 
@@ -165,30 +166,38 @@ def metrics(prediction: set[tuple[int, int]], ground_truth: set[tuple[int, int]]
 def similar_documents_test(n_docs: list[int], k: int, threshold: float, n_permutations: int, n_bands: int):
 
     sims_dict = {
+        'n_docs': [],
+        'k': k,
+        'threshold': threshold,
+        'n_permutations': n_permutations,
+        'n_bands': n_bands,
         'J': {'sim_docs': [], 'time': []},
         'LSH': {'sim_docs': [], 'time': [], 'TPR': [], 'FNR': [], 'FPR': []},
         'sign': {'sim_docs': [], 'time': [], 'TPR': [], 'FNR': [], 'FPR': []},
     }
 
     for n in n_docs:
+        sims_dict['n_docs'].append(n)
         docs = map(reuters.raw, reuters.fileids()[:n])
         shingles = map(partial(Shingling.shingle, k=k), docs)
-        j_mtrx = CompareSets.similarity_matrix(shingles)
-        char_mtrx = Shingling.characteristic_matrix(shingles)
 
         j_start_time = time()
-        sim_pairs = CompareSets.threshold_similarity_matrix_pairs(j_mtrx, threshold=threshold)
+        j_mtrx = CompareSets.similarity_matrix(shingles)
         j_time = time() - j_start_time
+
+        sim_pairs = CompareSets.threshold_similarity_matrix_pairs(j_mtrx, threshold=threshold)
 
         sims_dict['J']['sim_docs'].append(len(sim_pairs))
         sims_dict['J']['time'].append(j_time)
 
+        char_mtrx = Shingling.characteristic_matrix(shingles)
         sign_mtrx = MinHashing.hash(char_mtrx, n_permutations)
-        j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
 
         sign_start_time = time()
-        sim_pairs_approx = CompareSets.threshold_similarity_matrix_pairs(j_approx_mtrx, threshold=threshold)
+        j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
         sign_time = time() - sign_start_time
+
+        sim_pairs_approx = CompareSets.threshold_similarity_matrix_pairs(j_approx_mtrx, threshold=threshold)
 
         TPR, FNR, FPR = metrics(sim_pairs_approx, sim_pairs, n)
 
@@ -211,45 +220,55 @@ def similar_documents_test(n_docs: list[int], k: int, threshold: float, n_permut
         sims_dict['LSH']['FNR'].append(FNR)
         sims_dict['LSH']['FPR'].append(FPR)
 
-    plt.figure(figsize=(15, 15))
+        # save dict as json file
+        with open('sims_dict.json', 'w') as f:
+            json.dump(sims_dict, f, indent=4)
+
+
+def plot_from_json(filename):
+    with open(filename) as f:
+        sims_dict = json.load(f)
+    plt.figure(figsize=(15, 6))
     plt.suptitle(f'Similar Documents')
-    plt.subplot(2, 3, 1)
+    plt.subplot(1, 2, 1)
     plt.title('Number of similar documents for each method')
-    plt.plot(n_docs, sims_dict['J']['sim_docs'], '-x', label='Jaccard')
-    plt.plot(n_docs, sims_dict['sign']['sim_docs'], '-x', label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['sim_docs'], '-x', label='LSH')
+    plt.plot(sims_dict['n_docs'], sims_dict['J']['sim_docs'], '-x', label='Jaccard')
+    plt.plot(sims_dict['n_docs'], sims_dict['sign']['sim_docs'], '-x', label='Signatures')
+    plt.plot(sims_dict['n_docs'], sims_dict['LSH']['sim_docs'], '-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('Number of similar documents')
     plt.legend()
-    plt.subplot(2, 3, 2)
+    plt.grid()
+    plt.subplot(1, 2, 2)
     plt.title('Time to compute pairwise similarities')
-    plt.plot(n_docs, sims_dict['J']['time'], '-x', label='Jaccard')
-    plt.plot(n_docs, sims_dict['sign']['time'], '-x', label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['time'], '-x', label='LSH')
+    plt.plot(sims_dict['n_docs'], sims_dict['J']['time'], '-x', label='Jaccard')
+    plt.plot(sims_dict['n_docs'], sims_dict['sign']['time'], '-x', label='Signatures')
+    plt.plot(sims_dict['n_docs'], sims_dict['LSH']['time'], '-x', label='LSH')
     plt.xlabel('Number of documents')
     plt.ylabel('Time (s)')
     plt.legend()
-    plt.subplot(2, 3, 3)
-    plt.title('True positive ratios')
-    plt.plot(n_docs, sims_dict['sign']['TPR'], '-x', label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['TPR'], '-x', label='LSH')
-    plt.xlabel('Number of documents')
-    plt.ylabel('True positives')
-    plt.legend()
-    plt.subplot(2, 3, 4)
-    plt.title('False negative ratios')
-    plt.plot(n_docs, sims_dict['sign']['FNR'], '-x', label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['FNR'], '-x', label='LSH')
-    plt.xlabel('Number of documents')
-    plt.ylabel('False negatives')
-    plt.legend()
-    plt.subplot(2, 3, 5)
-    plt.title('False positive ratios')
-    plt.plot(n_docs, sims_dict['sign']['FPR'], '-x', label='Signatures')
-    plt.plot(n_docs, sims_dict['LSH']['FPR'], '-x', label='LSH')
-    plt.xlabel('Number of documents')
-    plt.ylabel('False positives')
-    plt.legend()
+    plt.grid()
+    # plt.subplot(2, 3, 3)
+    # plt.title('True positive ratios')
+    # plt.plot(sims_dict['n_docs'], sims_dict['sign']['TPR'], '-x', label='Signatures')
+    # plt.plot(sims_dict['n_docs'], sims_dict['LSH']['TPR'], '-x', label='LSH')
+    # plt.xlabel('Number of documents')
+    # plt.ylabel('True positives')
+    # plt.legend()
+    # plt.subplot(2, 3, 4)
+    # plt.title('False negative ratios')
+    # plt.plot(sims_dict['n_docs'], sims_dict['sign']['FNR'], '-x', label='Signatures')
+    # plt.plot(sims_dict['n_docs'], sims_dict['LSH']['FNR'], '-x', label='LSH')
+    # plt.xlabel('Number of documents')
+    # plt.ylabel('False negatives')
+    # plt.legend()
+    # plt.subplot(2, 3, 5)
+    # plt.title('False positive ratios')
+    # plt.plot(sims_dict['n_docs'], sims_dict['sign']['FPR'], '-x', label='Signatures')
+    # plt.plot(sims_dict['n_docs'], sims_dict['LSH']['FPR'], '-x', label='LSH')
+    # plt.xlabel('Number of documents')
+    # plt.ylabel('False positives')
+    # plt.legend()
     plt.show()
 
 
@@ -257,4 +276,5 @@ def similar_documents_test(n_docs: list[int], k: int, threshold: float, n_permut
 if __name__ == '__main__':
     from nltk.corpus import reuters
 
-    similar_documents_test(n_docs=[50, 100, 200, 400], k=6, threshold=0.2, n_permutations=1000, n_bands=500)
+similar_documents_test(n_docs=[50, 100, 200, 400, 800, 1500, 2000], k=5, threshold=0.2, n_permutations=1000, n_bands=250)
+# %%
