@@ -24,7 +24,7 @@ def baskets():
     return [{1,3,4}, {2,3,5}, {1,2,3,5}, {2,5}]
 
 
-def test_join(l1, l2, c3):
+def test_generate(l1, l2, c3):
     result = A_Priori.generate(l2, l1)
     assert result == c3, f'Joining L2 should result in C3, \n{result=},\n{c3=}'
 
@@ -99,14 +99,14 @@ def test_filter():
     }
 
     expected = {
-        frozenset([1,4]),
-        frozenset([2,5]),
+        frozenset([1,4]): 4,
+        frozenset([2,5]): 6,
     }
     filtered = A_Priori.filter(count, 3)
     assert filtered == expected, f'filter should result in expected, \n{filtered=},\n{expected=}'
 
     expected = {
-        frozenset([2,5]),
+        frozenset([2,5]): 6,
     }
     filtered = A_Priori.filter(count, 5)
     assert filtered == expected, f'filter should result in expected, \n{filtered=},\n{expected=}'
@@ -116,19 +116,19 @@ def test_get_frequent_itemsets(baskets):
     results = A_Priori.get_frequent_itemsets(baskets, 3, 2)
     expected = {
         1: {
-            frozenset([1]),
-            frozenset([2]),
-            frozenset([3]),
-            frozenset([5]),
+            frozenset([1]): 2,
+            frozenset([2]): 3,
+            frozenset([3]): 3,
+            frozenset([5]): 3,
         },
         2: {
-            frozenset([1,3]),
-            frozenset([2,3]),
-            frozenset([2,5]),
-            frozenset([3,5]),
+            frozenset([1,3]): 2,
+            frozenset([2,3]): 2,
+            frozenset([2,5]): 3,
+            frozenset([3,5]): 2,
         },
         3: {
-            frozenset([2,3,5]),
+            frozenset([2,3,5]): 2,
         }
     }
     assert results == expected, f'get_frequent_itemsets should result in expected, \n{results=},\n{expected=}'
