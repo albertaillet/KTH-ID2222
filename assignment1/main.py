@@ -183,9 +183,10 @@ def similar_documents_test(n_docs: list[int], k: int, threshold: float, n_permut
 
         j_start_time = time()
         j_mtrx = CompareSets.similarity_matrix(shingles)
+        sim_pairs = CompareSets.threshold_similarity_matrix_pairs(j_mtrx, threshold=threshold)
         j_time = time() - j_start_time
 
-        sim_pairs = CompareSets.threshold_similarity_matrix_pairs(j_mtrx, threshold=threshold)
+        
 
         sims_dict['J']['sim_docs'].append(len(sim_pairs))
         sims_dict['J']['time'].append(j_time)
@@ -195,10 +196,10 @@ def similar_documents_test(n_docs: list[int], k: int, threshold: float, n_permut
 
         sign_start_time = time()
         j_approx_mtrx = CompareSignatures.approx_matrix(sign_mtrx)
+        sim_pairs_approx = CompareSets.threshold_similarity_matrix_pairs(j_approx_mtrx, threshold=threshold)
         sign_time = time() - sign_start_time
 
-        sim_pairs_approx = CompareSets.threshold_similarity_matrix_pairs(j_approx_mtrx, threshold=threshold)
-
+        
         TPR, FNR, FPR = metrics(sim_pairs_approx, sim_pairs, n)
 
         sims_dict['sign']['sim_docs'].append(len(sim_pairs_approx))
