@@ -60,21 +60,13 @@ class A_Priori:
         return pruned_c_k
 
     @staticmethod
-    def k_subsampling(itemset: frozenset[int]) -> list[frozenset[int]]:
+    def subsets(itemset: frozenset[int]) -> set[frozenset[int]]:
         '''Returns all subsets of itemset of size k-1.'''
         all_combinations = set()
         for k in range(len(itemset) - 1, 0, -1):
             for subset in map(frozenset, combinations(itemset, k)):
                 all_combinations.add(subset)
-        return sorted(all_combinations, key=len, reverse=True)
-
-    @staticmethod
-    def delete_rules(possible_rules: list[frozenset[int]], low_confidence_itemset: frozenset[int]) -> list[frozenset[int]]:
-        '''Deletes all rules that contain subsets of bad_itemset.'''
-        for subset in A_Priori.k_subsampling(low_confidence_itemset):
-            if subset in possible_rules:
-                possible_rules.remove(subset)
-        return possible_rules
+        return all_combinations
 
     @staticmethod
     def mine_frequent_rules(frequent_itemsets: dict[int, dict[frozenset[int], int]], c_threshold: float) -> dict[frozenset[int], set[frozenset[int]]]:
@@ -84,11 +76,12 @@ class A_Priori:
         max_k = max(frequent_itemsets)
         for k in range(2, max_k + 1):
             for frequent_itemset, support in frequent_itemsets[k].items():
-                possible_rules = A_Priori.k_subsampling(frequent_itemset)
-                for i, possible_rule in enumerate(possible_rules):
+                possible_rules = A_Priori.subsets(frequent_itemset)
+                low_confidence_itemsets = set()
+                for possible_rule in sorted(possible_rules, key=len, reverse=True):
                     possible_rule_support = frequent_itemsets[len(possible_rule)][possible_rule]
-                    if support / possible_rule_support >= c_threshold:
+                    if possible_rule not in low_confidence_itemsets and support / possible_rule_support >= c_threshold:
                         rules[frequent_itemset].add((possible_rule))
                     else:
-                        possible_rules = A_Priori.delete_rules(possible_rules[i:], possible_rule)
-        return rules
+                        low_confidence_itemsets = low_confidence_itemsets | A_Priori.subsets(possible_rule)
+        return dict(rules)
