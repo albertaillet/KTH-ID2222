@@ -36,28 +36,33 @@ class Trièst():
             else:
                 return -1
 
-    def update_counters(self, edge: Union[tuple[int, int], tuple[None, None]], insert: bool=True) -> None:
+    def update_counters(self, edge: Union[tuple[int, int], tuple[None, None]], insert: bool=True, impr_t: int=0) -> None:
         '''Updates the counters for estimating the number of triangles in S'''
         u = edge[0]
         v = edge[1]
 
         N_u_v = self.N[u] & self.N[v]
         
-        self.t_global += len(N_u_v) if insert else -len(N_u_v)
-        self.t_local[u] += len(N_u_v) if insert else -len(N_u_v)
-        self.t_local[v] += len(N_u_v) if insert else -len(N_u_v)
+        eta=1
+        if impr_t:
+            eta = max(1, ((impr_t - 1)*(impr_t - 2)) / (self.M*(self.M - 1)))
 
         for c in N_u_v:
-            self.t_local[c] += 1 if insert else -1    
+            self.t_global += 1*eta if insert else -1*eta
+            self.t_local[u] += 1*eta if insert else -1*eta  # type: ignore
+            self.t_local[v] += 1*eta if insert else -1*eta  # type: ignore
+            self.t_local[c] += 1*eta if insert else -1*eta
 
-    def trièst_base(self, M: int, T: int) -> None:
-        '''Reads throught the edges sequentially, and updates the counters following the algorithm.'''
+    def initialize(self, M):
         self.M = M
         self.S: list[Union[tuple[int, int], tuple[None, None]]] = [(None, None)] * M
-        self.t_global = 0
-        self.t_local = defaultdict(lambda: 0) 
+        self.t_global: Union[int, float] = 0
+        self.t_local: dict[int, Union[int, float]] = defaultdict(int) 
         self.N = defaultdict(set) 
-
+        
+    def trièst_base(self, M: int, T: int) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
+        '''Reads throught the edges sequentially, and updates the counters following the trièst-base algorithm.'''
+        self.initialize(M)
         for t in tqdm(range(T)):
             rs = self.reservoir_sampling(t)
             if rs != -1:
@@ -73,6 +78,26 @@ class Trièst():
                 self.N[new_edge[1]].add(new_edge[0])
                 
                 self.update_counters(new_edge)
+        return self.t_global, self.t_local
+
+    def trièst_impr(self, M: int, T: int) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
+        '''Reads throught the edges sequentially, and updates the counters following the trièst-impr algorithm.'''
+        self.initialize(M)
+        for t in tqdm(range(T)):
+            self.update_counters(self.edges[t], impr_t=t)
+            rs = self.reservoir_sampling(t)
+            if rs != -1:
+                if t >= M:
+                    edge_to_substitute = self.S[rs]
+                    self.N[edge_to_substitute[0]].remove(edge_to_substitute[1])
+                    self.N[edge_to_substitute[1]].remove(edge_to_substitute[0])
+
+                new_edge = self.edges[t]
+                self.S[rs] = new_edge
+                self.N[new_edge[0]].add(new_edge[1])
+                self.N[new_edge[1]].add(new_edge[0])
+        return self.t_global, self.t_local
+                
 
     def triangles_count(self, T: int) -> int:
         '''generates a networkx graph using the first T edges and returns the number of triangles in it'''
