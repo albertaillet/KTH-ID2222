@@ -96,7 +96,7 @@ class Trièst():
                 self.S[rs] = new_edge
                 self.N[new_edge[0]].add(new_edge[1])
                 self.N[new_edge[1]].add(new_edge[0])
-        return self.t_global, self.t_local
+        return int(self.t_global), self.t_local
                 
 
     def triangles_count(self, T: int) -> int:
