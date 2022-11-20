@@ -12,7 +12,7 @@ def documents():
 
 def test_shingling(documents):
     shingles = map(partial(Shingling.shingle, k=5), documents)
-    uniques = reduce(Shingling.intersection, shingles)
+    uniques = reduce(Shingling.union, shingles)
     assert len(shingles) == 4
 
     assert hash('This ') in uniques
