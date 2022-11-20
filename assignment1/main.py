@@ -34,15 +34,15 @@ class Shingling:
         return set(shingles)
 
     @staticmethod
-    def intersection(uniques: set[int], shingles: set[int]) -> set[int]:
-        '''Computes the intersection of two sets of hashed k-shingles.'''
+    def union(uniques: set[int], shingles: set[int]) -> set[int]:
+        '''Computes the union of two sets of hashed k-shingles.'''
         return uniques | shingles
 
     @staticmethod
     def characteristic_matrix(shingles: list[set[int]]) -> ndarray:
         '''Computes the characteristic matrix of a given set of documents.'''
 
-        uniques = reduce(Shingling.intersection, shingles)
+        uniques = reduce(Shingling.union, shingles)
         mapping_dict = {s: i for i, s in enumerate(uniques)}
         hashed_shingles = map(lambda l: map(mapping_dict.get, l), shingles)
 
@@ -277,5 +277,11 @@ def plot_from_json(filename):
 if __name__ == '__main__':
     from nltk.corpus import reuters
 
-similar_documents_test(n_docs=[50, 100, 200, 400, 800, 1500, 2000], k=5, threshold=0.2, n_permutations=1000, n_bands=250)
+similar_documents_test(n_docs=[50, 100, 200, 400, 800], k=5, threshold=0.2, n_permutations=1000, n_bands=250)
+plot_from_json('sims_dict.json')
+# %%
+docs = map(reuters.raw, reuters.fileids()[:1000])
+
+# %%
+shingles = map(partial(Shingling.shingle, k=5), docs)
 # %%
