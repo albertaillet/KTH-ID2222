@@ -7,15 +7,15 @@ class A_Priori:
     @staticmethod
     def get_frequent_itemsets(baskets: list[set[int]], k_max: int, s: int) -> dict[int, dict[frozenset[int], int]]:
         '''Return frequent itemsets of size k_max for baskets with support s.'''
-        l = {}
+        L = {}
         counts_1 = A_Priori.count(baskets, 1)
-        l[1] = A_Priori.filter(counts_1, s)
+        L[1] = A_Priori.filter(counts_1, s)
         for i in range(2, k_max + 1):
-            c_k = A_Priori.generate(l[i - 1], l[1])
-            pruned_c_k = A_Priori.prune(c_k, l[i - 1])
+            c_k = A_Priori.generate(L[i - 1], L[1])
+            pruned_c_k = A_Priori.prune(c_k, L[i - 1])
             counts_i = A_Priori.count(baskets, i, pruned_c_k)
-            l[i] = A_Priori.filter(counts_i, s)
-        return l
+            L[i] = A_Priori.filter(counts_i, s)
+        return L
 
     @staticmethod
     def count(baskets: list[set[int]], k: int, c_k: Optional[set[frozenset[int]]] = None) -> dict[frozenset[int], int]:
