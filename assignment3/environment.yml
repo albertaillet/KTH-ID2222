@@ -1,0 +1,9 @@
+name: id2222-env-assignment3
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - ipykernel
+  - matplotlib
+  - pytest
+  - networkx

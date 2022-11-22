@@ -1,12 +1,10 @@
-name: id2222-env-2
+name: id2222-env-assignment2
 channels:
   - conda-forge
 dependencies:
-  - python==3.10
+  - python
   - ipykernel
-  - nltk
   - matplotlib
   - pytest
   - mlxtend
   - pandas
-  - networkx
