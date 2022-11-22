@@ -8,3 +8,5 @@ dependencies:
   - matplotlib
   - pytest
   - mlxtend
+  - pandas
+  - networkx

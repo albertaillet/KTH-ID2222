@@ -1,108 +1,107 @@
-
 # imports
-import numpy as np
-import csv
+import random
 from tqdm import tqdm
-import networkx as nx
+from collections import defaultdict
+from abc import ABC, abstractmethod
 
 # typing
-from collections import defaultdict
-from typing import Union
+from typing import Union, Optional
 
 
-class Trièst():
-    def __init__(self, graph_name: str):
-        if graph_name != '':
-            self.edges = Trièst.load_data(graph_name)
-            print(f'Data has been loaded!\nIt has {len(self.edges)} edges')
-        
+class Trièst(ABC):
+    '''Abstract class for the Trièst algorithm.'''
 
-    @staticmethod
-    def load_data(filename: str) -> list[tuple[int, int]]:
-        '''Load data from file and return it as a list of frozensets.'''
-        with open(f'data/{filename}/{filename}_edges.csv', newline='') as csvfile:
-            edges_reader = csv.reader(csvfile, delimiter=',', quotechar='|')
-            edges = list(tuple((int(a), int(b))) for a, b in list(edges_reader)[1:])
-        return edges
-
-    def reservoir_sampling(self, t: int) -> int:
-        '''Returns -1 if the new edge is not kept in memory, otherwise the index of the reservoir that has to be substituted'''
-        if t < self.M: 
-            return t
-        else:
-            u = np.random.uniform()
-            if u < self.M / t:                
-                return np.random.choice(self.M)
-            else:
-                return -1
-
-    def update_counters(self, edge: Union[tuple[int, int], tuple[None, None]], insert: bool=True, impr_t: int=0) -> None:
-        '''Updates the counters for estimating the number of triangles in S'''
-        u = edge[0]
-        v = edge[1]
-
-        N_u_v = self.N[u] & self.N[v]
-        
-        eta=1
-        if impr_t:
-            eta = max(1, ((impr_t - 1)*(impr_t - 2)) / (self.M*(self.M - 1)))
-
-        for c in N_u_v:
-            self.t_global += 1*eta if insert else -1*eta
-            self.t_local[u] += 1*eta if insert else -1*eta  # type: ignore
-            self.t_local[v] += 1*eta if insert else -1*eta  # type: ignore
-            self.t_local[c] += 1*eta if insert else -1*eta
-
-    def initialize(self, M):
-        self.M = M
+    def __init__(self, M: int, *, seed: int = 0) -> None:
+        '''Initialize the Trièst algorithm.'''
+        self.M: int = M
         self.S: list[Union[tuple[int, int], tuple[None, None]]] = [(None, None)] * M
         self.t_global: Union[int, float] = 0
-        self.t_local: dict[int, Union[int, float]] = defaultdict(int) 
-        self.N = defaultdict(set) 
-        
-    def trièst_base(self, M: int, T: int) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
-        '''Reads throught the edges sequentially, and updates the counters following the trièst-base algorithm.'''
-        self.initialize(M)
-        for t in tqdm(range(T)):
-            rs = self.reservoir_sampling(t)
-            if rs != -1:
-                if t >= M:
-                    edge_to_substitute = self.S[rs]
-                    self.N[edge_to_substitute[0]].remove(edge_to_substitute[1])
-                    self.N[edge_to_substitute[1]].remove(edge_to_substitute[0])
-                    self.update_counters(edge_to_substitute, False)
+        self.t_local: defaultdict[int, Union[int, float]] = defaultdict(int)
+        self.N = defaultdict(set)
+        self.seed: int = seed
+        random.seed(seed)
 
-                new_edge = self.edges[t]
-                self.S[rs] = new_edge
-                self.N[new_edge[0]].add(new_edge[1])
-                self.N[new_edge[1]].add(new_edge[0])
-                
-                self.update_counters(new_edge)
+    @abstractmethod
+    def __call__(self, stream: list[tuple[int, int]]) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def update_counters(self, u: int, v: int, *, addition: bool = True, t: Optional[int] = None) -> None:
+        raise NotImplementedError
+
+    @staticmethod
+    def reservoir_sampling(t: int, M: int):
+        '''Returns -1 if the new edge is not kept in memory, otherwise the index of the reservoir that has to be substituted'''
+        if t < M:
+            return t
+        elif Trièst.flip_biased_coin(M / t):
+            return random.randrange(M)
+        return -1
+
+    @staticmethod
+    def flip_biased_coin(p: float) -> bool:
+        '''Returns True with probability p'''
+        return random.random() < p
+
+
+class TrièstBase(Trièst):
+    def __call__(self, stream: list[tuple[int, int]]) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
+        '''Reads throught the edges sequentially, and updates the counters following the trièst-base algorithm.'''
+        for t, (u, v) in tqdm(enumerate(stream)):
+            rs = self.reservoir_sampling(t, self.M)
+            if rs != -1:
+                if t >= self.M:
+                    (up, vp) = self.S[rs]
+                    self.N[up].remove(vp)
+                    self.N[vp].remove(up)
+                    self.update_counters(up, vp, addition=False)
+
+                self.S[rs] = (u, v)
+                self.N[u].add(v)
+                self.N[v].add(u)
+                self.update_counters(u, v, addition=True)
+
         return self.t_global, self.t_local
 
-    def trièst_impr(self, M: int, T: int) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
+    def update_counters(self, u: int, v: int, *, addition: bool = True, t: Optional[int] = None) -> None:
+        '''Updates the counters for estimating the number of triangles in S'''
+
+        N_u_v = self.N[u] & self.N[v]
+
+        for c in N_u_v:
+            self.t_global += 1 if addition else -1
+            self.t_local[u] += 1 if addition else -1
+            self.t_local[v] += 1 if addition else -1
+            self.t_local[c] += 1 if addition else -1
+
+
+class TrièstImpr(Trièst):
+    def __call__(self, stream: list[tuple[int, int]]) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
         '''Reads throught the edges sequentially, and updates the counters following the trièst-impr algorithm.'''
-        self.initialize(M)
-        for t in tqdm(range(T)):
-            self.update_counters(self.edges[t], impr_t=t)
-            rs = self.reservoir_sampling(t)
+        for t, (u, v) in tqdm(enumerate(stream)):
+            self.update_counters(u, v, t=t)
+            rs = self.reservoir_sampling(t, self.M)
             if rs != -1:
-                if t >= M:
-                    edge_to_substitute = self.S[rs]
-                    self.N[edge_to_substitute[0]].remove(edge_to_substitute[1])
-                    self.N[edge_to_substitute[1]].remove(edge_to_substitute[0])
+                if t >= self.M:
+                    (up, vp) = self.S[rs]
+                    self.N[up].remove(vp)
+                    self.N[vp].remove(up)
 
-                new_edge = self.edges[t]
-                self.S[rs] = new_edge
-                self.N[new_edge[0]].add(new_edge[1])
-                self.N[new_edge[1]].add(new_edge[0])
+                self.S[rs] = (u, v)
+                self.N[u].add(v)
+                self.N[v].add(u)
+
         return int(self.t_global), self.t_local
-                
 
-    def triangles_count(self, T: int) -> int:
-        '''generates a networkx graph using the first T edges and returns the number of triangles in it'''
-        G = nx.Graph()
-        G.add_edges_from(self.edges[:T])
-        triangles = nx.triangles(G).values()
-        return triangles
-        
+    def update_counters(self, u: int, v: int, *, addition: bool = True, t: Optional[int] = None) -> None:
+        '''Updates the counters for estimating the number of triangles in S'''
+
+        N_u_v = self.N[u] & self.N[v]
+
+        eta = max(1, ((t - 1) * (t - 2)) / (self.M * (self.M - 1)))
+
+        for c in N_u_v:
+            self.t_global += eta
+            self.t_local[u] += eta
+            self.t_local[v] += eta
+            self.t_local[c] += eta
