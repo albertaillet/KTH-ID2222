@@ -45,7 +45,8 @@ def spectral_clustering(L: ndarray, k: Optional[int]=None) -> ndarray:
     # compute the number of eigenvectors k
     if k is None:
         k = int(len(eigenvalues) - np.argmax(np.diff(eigenvalues))) 
-    print(k)
+        print(f'Number of clusters using the heuristic: {k}')
+ 
     # exctract the k biggest eigenvectors in X
     X = eigenvectors[:, -k:]
     
