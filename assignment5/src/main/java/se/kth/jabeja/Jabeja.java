@@ -49,7 +49,6 @@ public class Jabeja {
    * Simulated analealing cooling function
    */
   private void saCoolDown(){
-    // TODO for second task
     if (T > 1)
       T -= config.getDelta();
     if (T < 1)
@@ -66,25 +65,32 @@ public class Jabeja {
 
     if (config.getNodeSelectionPolicy() == NodeSelectionPolicy.HYBRID
             || config.getNodeSelectionPolicy() == NodeSelectionPolicy.LOCAL) {
-      partner = findPartner(nodeId, nodep.getNeighbours());
+      partner = findPartner(nodeId, getNeighbors(nodep));
     }
 
-    if (config.getNodeSelectionPolicy() == NodeSelectionPolicy.HYBRID
-            || config.getNodeSelectionPolicy() == NodeSelectionPolicy.RANDOM) {
-      // if local policy fails then randomly sample the entire graph
-      // TODO
+    if (partner == null && ( 
+        config.getNodeSelectionPolicy() == NodeSelectionPolicy.HYBRID
+        || config.getNodeSelectionPolicy() == NodeSelectionPolicy.RANDOM)) {
+      partner = findPartner(nodeId, getSample(nodeId));
     }
 
-    // swap the colors
-    // TODO
+    if (partner != null) {
+      int nodeColor = nodep.getColor();
+      int partnerColor = partner.getColor();
+      nodep.setColor(partnerColor);
+      partner.setColor(nodeColor);
+      numberOfSwaps++;
+    }
   }
 
-  public Node findPartner(int nodeId, ArrayList<Integer> nodes) {
+  public Node findPartner(int nodeId, Integer[] nodes) {
 
     Node nodep = entireGraph.get(nodeId);
 
     Node bestPartner = null;
     double highestBenefit = 0;
+
+    float alpha = config.getAlpha();
 
     int dpp;
     int dqq;
@@ -95,22 +101,20 @@ public class Jabeja {
     double new_;
 
 
-    for (int i = 0; i < nodes.size(); i++) {
-      int nodeqId = nodes.get(i);
-      Node nodeq = entireGraph.get(nodeqId);
-      dpp = nodeq.getDegree();  // degree of nodeq (will have to add color check)
-      dqq = nodep.getDegree();  // degree of nodep (will have to add color check) 
-      old_ = dpp + dqq;
+    for (int i = 0; i < nodes.length; i++) {
+      Node nodeq = entireGraph.get(nodes[i]);
+      dpp = getDegree(nodep, nodep.getColor());
+      dqq = getDegree(nodeq, nodeq.getColor());
+      old_ = Math.pow(dpp, alpha) + Math.pow(dqq, alpha);
 
-      dpq = nodeq.getDegree();  // degree of nodeq with color of nodep
-      dqp = nodep.getDegree();  // degree of nodep with color of nodeq
-      new_ = dpq + dqp;
+      dpq = getDegree(nodep, nodeq.getColor());
+      dqp = getDegree(nodeq, nodep.getColor());
+      new_ = Math.pow(dpq, alpha) + Math.pow(dqp, alpha);
 
-      if ((new_ > old_) && (new_ > highestBenefit)) {
+      if (((new_ * T) > old_) && (new_ > highestBenefit)) {
         bestPartner = nodeq;
         highestBenefit = new_;
       }
-
     }
 
     return bestPartner;
