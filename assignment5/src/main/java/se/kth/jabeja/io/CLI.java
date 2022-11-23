@@ -37,6 +37,9 @@ public class CLI {
   @Option(name = "-seed", usage = "Seed.")
   private int SEED = 0;
 
+  @Option(name = "-annealing", usage = "Whether or not to use simulated annealing.")
+  private boolean ANNEALING = false;
+
   @Option(name = "-alpha", usage = "Alpah parameter")
   private float ALPHA = 2;
 
@@ -110,6 +113,10 @@ public class CLI {
             .setNodeSelectionPolicy(nodeSelectionPolicy)
             .setGraphInitialColorPolicy(graphInitColorSelectionPolicy)
             .setOutputDir(OUTPUT_DIR)
-            .setAlpha(ALPHA);
+            .setAlpha(ALPHA)
+            .setAnnealing(ANNEALING);
+            
   }
+
+  
 }

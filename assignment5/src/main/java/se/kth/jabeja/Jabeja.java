@@ -68,9 +68,8 @@ public class Jabeja {
       partner = findPartner(nodeId, getNeighbors(nodep));
     }
 
-    if (partner == null && ( 
-        config.getNodeSelectionPolicy() == NodeSelectionPolicy.HYBRID
-        || config.getNodeSelectionPolicy() == NodeSelectionPolicy.RANDOM)) {
+    if (partner == null && 
+    (config.getNodeSelectionPolicy() == NodeSelectionPolicy.HYBRID || config.getNodeSelectionPolicy() == NodeSelectionPolicy.RANDOM)) {
       partner = findPartner(nodeId, getSample(nodeId));
     }
 
@@ -91,6 +90,7 @@ public class Jabeja {
     double highestBenefit = 0;
 
     float alpha = config.getAlpha();
+    boolean annealing = config.getAnnealing();
 
     int dpp;
     int dqq;

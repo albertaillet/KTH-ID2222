@@ -13,9 +13,15 @@ public class Config {
   private GraphInitColorPolicy initColorPolicy;
   private NodeSelectionPolicy nodeSelectionPolicy;
   private Float alpha;
+  private Boolean annealing;
 
   public Config setAlpha(Float alpha) {
     this.alpha = alpha;
+    return this;
+  }
+
+  public Config setAnnealing(Boolean annealing) {
+    this.annealing = annealing;
     return this;
   }
 
@@ -158,8 +164,16 @@ public class Config {
     return alpha;
   }
 
+  public Boolean getAnnealing() {
+     if (annealing) {
+    }
+    return annealing;
+  }
+
   public Config createJabejaConfig() {
     return new Config();
   }
+
+
 
 }
