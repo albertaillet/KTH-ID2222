@@ -18,7 +18,13 @@ public class Jabeja {
   private int numberOfSwaps;
   private int round;
   private float T;
+  private int annealing;
   private boolean resultFileCreated = false;
+  private float coolingRate;
+  private double T_min;
+  private int restartCounter;
+  private int restartLimit;
+  
 
   //-------------------------------------------------------------------
   public Jabeja(HashMap<Integer, Node> graph, Config config) {
@@ -28,6 +34,16 @@ public class Jabeja {
     this.numberOfSwaps = 0;
     this.config = config;
     this.T = config.getTemperature();
+    this.annealing = config.getAnnealing();
+    this.coolingRate = config.getCoolingRate();
+
+    if (this.annealing!=0) {
+      this.T = 1;
+      this.T_min = 0.001;
+      this.restartCounter = 0;
+      this.restartLimit = 100;
+    }
+
   }
 
 
@@ -37,7 +53,6 @@ public class Jabeja {
       for (int id : entireGraph.keySet()) {
         sampleAndSwap(id);
       }
-
       //one cycle for all nodes have completed.
       //reduce the temperature
       saCoolDown();
@@ -49,10 +64,24 @@ public class Jabeja {
    * Simulated analealing cooling function
    */
   private void saCoolDown(){
-    if (T > 1)
+
+    if (annealing!=0) {
+      T *= coolingRate;
+      if (T < T_min) {
+        T = (float) T_min;
+        restartCounter++;
+        if (restartCounter > restartLimit) {
+          restartCounter = 0;
+          T = 1;
+        }
+      }
+    }
+    else {
+      if (T > 1)
       T -= config.getDelta();
-    if (T < 1)
-      T = 1;
+      if (T < 1)
+        T = 1;
+    }
   }
 
   /**
@@ -90,7 +119,6 @@ public class Jabeja {
     double highestBenefit = 0;
 
     float alpha = config.getAlpha();
-    int annealing = config.getAnnealing();
 
     int dpp;
     int dqq;
@@ -111,12 +139,26 @@ public class Jabeja {
       dqp = getDegree(nodeq, nodep.getColor());
       new_ = Math.pow(dpq, alpha) + Math.pow(dqp, alpha);
 
-      if (((new_ * T) > old_) && (new_ > highestBenefit)) {
-        bestPartner = nodeq;
-        highestBenefit = new_;
+      if (annealing==1) {
+
+        double acceptance = Math.exp((new_ - old_) / T);
+        Random rand = new Random();
+        double randDouble = rand.nextDouble();  
+
+        if ((acceptance > randDouble) && (acceptance > highestBenefit) && (new_ != old_)) {
+          bestPartner = nodeq;
+          highestBenefit = acceptance;
+        }
+      }
+
+      else if (annealing==0) {
+        if (((new_ * T) > old_) && (new_ > highestBenefit)) {
+          bestPartner = nodeq;
+          highestBenefit = new_;
+        }
       }
     }
-
+      
     return bestPartner;
   }
 
@@ -255,7 +297,9 @@ public class Jabeja {
             "RNSS" + "_" + config.getRandomNeighborSampleSize() + "_" +
             "URSS" + "_" + config.getUniformRandomSampleSize() + "_" +
             "A" + "_" + config.getAlpha() + "_" +
-            "R" + "_" + config.getRounds() + ".txt";
+            "R" + "_" + config.getRounds() + "_" +
+            "Annealing" + "_" + config.getAnnealing() + "_" +
+            "CoolingRate" + "_" + config.getCoolingRate() + ".txt";
 
     if (!resultFileCreated) {
       File outputDir = new File(config.getOutputDir());
