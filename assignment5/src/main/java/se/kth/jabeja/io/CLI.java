@@ -43,6 +43,9 @@ public class CLI {
   @Option(name = "-coolingRate", usage = "Simulated annealing cooling rate.")
   private float COOLING_RATE = (float) 0.99;
 
+  @Option(name = "-k", usage = "Rate of coolingRate decay for custom annealing.")
+  private float K = (float) 0.02;
+
   @Option(name = "-alpha", usage = "Alpha parameter")
   private float ALPHA = 2;
 
@@ -118,7 +121,8 @@ public class CLI {
             .setOutputDir(OUTPUT_DIR)
             .setAlpha(ALPHA)
             .setAnnealing(ANNEALING)
-            .setCoolingRate(COOLING_RATE);
+            .setCoolingRate(COOLING_RATE)
+            .setK(K);
             
   }
 

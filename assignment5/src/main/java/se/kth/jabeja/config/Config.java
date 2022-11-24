@@ -15,6 +15,7 @@ public class Config {
   private Float alpha;
   private Integer annealing;
   private Float coolingRate;
+  private Float k;
 
   public Config setAlpha(Float alpha) {
     this.alpha = alpha;
@@ -23,6 +24,11 @@ public class Config {
 
   public Config setAnnealing(Integer annealing) {
     this.annealing = annealing;
+    return this;
+  }
+
+  public Config setK(Float k) {
+    this.k = k;
     return this;
   }
 
@@ -182,10 +188,14 @@ public class Config {
     return coolingRate;
   }
 
+  public Float getK() {
+    if (k == null) {
+    }
+    return k;
+  }
+
   public Config createJabejaConfig() {
     return new Config();
   }
-
-
 
 }

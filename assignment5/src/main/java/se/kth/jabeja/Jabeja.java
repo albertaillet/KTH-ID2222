@@ -24,6 +24,7 @@ public class Jabeja {
   private double T_min;
   private int restartCounter;
   private int restartLimit;
+  private float k;
   
 
   //-------------------------------------------------------------------
@@ -35,13 +36,21 @@ public class Jabeja {
     this.config = config;
     this.T = config.getTemperature();
     this.annealing = config.getAnnealing();
-    this.coolingRate = config.getCoolingRate();
+   
 
-    if (this.annealing!=0) {
+    if (this.annealing==1) {
       this.T = 1;
-      this.T_min = 0.001;
+      this.T_min = 0.0001;
+      this.coolingRate = config.getCoolingRate();
       this.restartCounter = 0;
       this.restartLimit = 100;
+    }
+
+    if (this.annealing==2) {
+      this.T = 1;
+      this.T_min = 0.0001;
+      this.coolingRate = config.getCoolingRate();
+      this.k = config.getK();
     }
 
   }
@@ -65,7 +74,7 @@ public class Jabeja {
    */
   private void saCoolDown(){
 
-    if (annealing!=0) {
+    if (annealing==1) {
       T *= coolingRate;
       if (T < T_min) {
         T = (float) T_min;
@@ -74,6 +83,13 @@ public class Jabeja {
           restartCounter = 0;
           T = 1;
         }
+      }
+    }
+    else if (annealing==2) {
+      T *= coolingRate;
+      if (T < T_min) {
+        T = 1;
+        coolingRate -= k;
       }
     }
     else {
@@ -139,7 +155,8 @@ public class Jabeja {
       dqp = getDegree(nodeq, nodep.getColor());
       new_ = Math.pow(dpq, alpha) + Math.pow(dqp, alpha);
 
-      if (annealing==1) {
+      // works for both annealing=1 and annealing=2
+      if (annealing!=0) {
 
         double acceptance = Math.exp((new_ - old_) / T);
         Random rand = new Random();
@@ -151,7 +168,7 @@ public class Jabeja {
         }
       }
 
-      else if (annealing==0) {
+      else {
         if (((new_ * T) > old_) && (new_ > highestBenefit)) {
           bestPartner = nodeq;
           highestBenefit = new_;
@@ -299,7 +316,8 @@ public class Jabeja {
             "A" + "_" + config.getAlpha() + "_" +
             "R" + "_" + config.getRounds() + "_" +
             "Annealing" + "_" + config.getAnnealing() + "_" +
-            "CoolingRate" + "_" + config.getCoolingRate() + ".txt";
+            "CoolingRate" + "_" + config.getCoolingRate() + "_" +
+            "K" + "_" + config.getK() + ".txt";
 
     if (!resultFileCreated) {
       File outputDir = new File(config.getOutputDir());
