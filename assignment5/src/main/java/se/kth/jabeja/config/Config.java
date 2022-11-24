@@ -13,15 +13,21 @@ public class Config {
   private GraphInitColorPolicy initColorPolicy;
   private NodeSelectionPolicy nodeSelectionPolicy;
   private Float alpha;
-  private Boolean annealing;
+  private Integer annealing;
+  private Float coolingRate;
 
   public Config setAlpha(Float alpha) {
     this.alpha = alpha;
     return this;
   }
 
-  public Config setAnnealing(Boolean annealing) {
+  public Config setAnnealing(Integer annealing) {
     this.annealing = annealing;
+    return this;
+  }
+
+  public Config setCoolingRate(Float coolingRate) {
+    this.coolingRate = coolingRate;
     return this;
   }
 
@@ -164,10 +170,16 @@ public class Config {
     return alpha;
   }
 
-  public Boolean getAnnealing() {
-     if (annealing) {
+  public Integer getAnnealing() {
+     if (annealing == null) {
     }
     return annealing;
+  }
+
+  public Float getCoolingRate() {
+    if (coolingRate == null) {
+    }
+    return coolingRate;
   }
 
   public Config createJabejaConfig() {

@@ -90,7 +90,7 @@ public class Jabeja {
     double highestBenefit = 0;
 
     float alpha = config.getAlpha();
-    boolean annealing = config.getAnnealing();
+    int annealing = config.getAnnealing();
 
     int dpp;
     int dqq;

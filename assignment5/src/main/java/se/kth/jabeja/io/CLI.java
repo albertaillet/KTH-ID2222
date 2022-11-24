@@ -37,10 +37,13 @@ public class CLI {
   @Option(name = "-seed", usage = "Seed.")
   private int SEED = 0;
 
-  @Option(name = "-annealing", usage = "Whether or not to use simulated annealing.")
-  private boolean ANNEALING = false;
+  @Option(name = "-annealing", usage = "0: no annealing | 1: basic annealing | 2: custom annealing.")
+  private int ANNEALING = (int) 0;
 
-  @Option(name = "-alpha", usage = "Alpah parameter")
+  @Option(name = "-coolingRate", usage = "Simulated annealing cooling rate.")
+  private float COOLING_RATE = (float) 0.99;
+
+  @Option(name = "-alpha", usage = "Alpha parameter")
   private float ALPHA = 2;
 
   @Option(name = "-randNeighborsSampleSize", usage = "Number of random neighbors sample size.")
@@ -114,7 +117,8 @@ public class CLI {
             .setGraphInitialColorPolicy(graphInitColorSelectionPolicy)
             .setOutputDir(OUTPUT_DIR)
             .setAlpha(ALPHA)
-            .setAnnealing(ANNEALING);
+            .setAnnealing(ANNEALING)
+            .setCoolingRate(COOLING_RATE);
             
   }
 
