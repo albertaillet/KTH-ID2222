@@ -5,7 +5,7 @@ from collections import defaultdict
 from abc import ABC, abstractmethod
 
 # typing
-from typing import Union, Optional
+from typing import Optional
 
 
 class Trièst(ABC):
@@ -14,15 +14,15 @@ class Trièst(ABC):
     def __init__(self, M: int, *, seed: int = 0) -> None:
         '''Initialize the Trièst algorithm.'''
         self.M: int = M
-        self.S: list[Union[tuple[int, int], tuple[None, None]]] = [(None, None)] * M
-        self.t_global: Union[int, float] = 0
-        self.t_local: defaultdict[int, Union[int, float]] = defaultdict(int)
+        self.S: list[tuple[int, int]] = [(0, 0)] * M  # initialize S with -1s
+        self.t_global: float = 0.0
+        self.t_local: defaultdict[int, float] = defaultdict(float)
         self.N = defaultdict(set)
         self.seed: int = seed
         random.seed(seed)
 
     @abstractmethod
-    def __call__(self, stream: list[tuple[int, int]]) -> None:
+    def __call__(self, stream: list[tuple[int, int]]) -> int:
         raise NotImplementedError
 
     @abstractmethod
@@ -45,7 +45,7 @@ class Trièst(ABC):
 
 
 class TrièstBase(Trièst):
-    def __call__(self, stream: list[tuple[int, int]]) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
+    def __call__(self, stream: list[tuple[int, int]]) -> int:
         '''Reads throught the edges sequentially, and updates the counters following the trièst-base algorithm.'''
         for t, (u, v) in tqdm(enumerate(stream)):
             rs = self.reservoir_sampling(t, self.M)
@@ -61,7 +61,7 @@ class TrièstBase(Trièst):
                 self.N[v].add(u)
                 self.update_counters(u, v, addition=True)
 
-        return self.t_global, self.t_local
+        return int(self.t_global)
 
     def update_counters(self, u: int, v: int, *, addition: bool = True, t: Optional[int] = None) -> None:
         '''Updates the counters for estimating the number of triangles in S'''
@@ -76,7 +76,7 @@ class TrièstBase(Trièst):
 
 
 class TrièstImpr(Trièst):
-    def __call__(self, stream: list[tuple[int, int]]) -> tuple[Union[int, float], dict[int, Union[int, float]]]:
+    def __call__(self, stream: list[tuple[int, int]]) -> int:
         '''Reads throught the edges sequentially, and updates the counters following the trièst-impr algorithm.'''
         for t, (u, v) in tqdm(enumerate(stream)):
             self.update_counters(u, v, t=t)
@@ -91,7 +91,7 @@ class TrièstImpr(Trièst):
                 self.N[u].add(v)
                 self.N[v].add(u)
 
-        return int(self.t_global), self.t_local
+        return int(self.t_global)
 
     def update_counters(self, u: int, v: int, *, addition: bool = True, t: Optional[int] = None) -> None:
         '''Updates the counters for estimating the number of triangles in S'''
