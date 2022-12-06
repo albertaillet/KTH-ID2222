@@ -79,7 +79,7 @@ def plot_fiedler(L: ndarray, ax) -> None:
     ax.grid()
 
 
-def plot_eigengap(L: ndarray, ax) -> None:
+def plot_eigengap(L: ndarray, ax: plt.Axes) -> None:
     # get eigenvalues and eigenvectors
     w, _ = np.linalg.eigh(L)
 
@@ -89,12 +89,12 @@ def plot_eigengap(L: ndarray, ax) -> None:
     ax.grid()
 
 
-def plot_sparsity_pattern(L: ndarray, ax) -> None:
+def plot_sparsity_pattern(L: ndarray, ax: plt.Axes) -> None:
     ax.set_title('Sparsity pattern of the Laplacian matrix')
     ax.spy(L)
 
 
-def plots(L: ndarray, A: ndarray, labels: ndarray, k: Optional[int] = None) -> None:
+def plots(L: ndarray, A: ndarray, labels: ndarray) -> None:
     _, axs = plt.subplots(2, 2, figsize=(10, 10))
     plot_sparsity_pattern(L, axs[0, 0])
     plot_eigengap(L, axs[0, 1])
