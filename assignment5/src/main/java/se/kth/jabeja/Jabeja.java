@@ -144,7 +144,8 @@ public class Jabeja {
     int dqp;
     double new_;
 
-
+    Random rand = new Random();
+    
     for (int i = 0; i < nodes.length; i++) {
       Node nodeq = entireGraph.get(nodes[i]);
       dpp = getDegree(nodep, nodep.getColor());
@@ -159,7 +160,7 @@ public class Jabeja {
       if (annealing!=0) {
 
         double acceptance = Math.exp((new_ - old_) / T);
-        Random rand = new Random();
+        
         double randDouble = rand.nextDouble();  
 
         if ((acceptance > randDouble) && (acceptance > highestBenefit) && (new_ != old_)) {
